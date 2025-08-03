@@ -12,15 +12,21 @@ collection = db.collection('category') # firestore collection name
 
 # add category
 @router.post("/", response_model=CategoryOut)
-def create_category(
+def create_category(    
+    category_id: str = Form(...),
     category_name: str = Form(...),
     category_type: str = Form(...),
     category_image: UploadFile = File(...)
 ):
-    # Check if category already exists
+    # Check if category name already exists
     existing_category = collection.where('category_name', '==', category_name).get()
     if existing_category:
-        raise HTTPException(status_code=400, detail="This Category already exists...!")
+        raise HTTPException(status_code=400, detail="This Category name already exists...!")
+    
+    # check if category_id already exists
+    existing_category_id = collection.document(category_id).get()
+    if existing_category_id.exists:
+        raise HTTPException(status_code=400, detail="This Category ID already exists...!")  
     
     # upload image to firebase storage
     bucket = storage.bucket()
@@ -30,15 +36,17 @@ def create_category(
     blob.make_public()
 
     image_url = blob.public_url
-    
+        
     # Add new category 
     category_data = {
         "category_name": category_name,
         "category_type": category_type,
         "category_image": image_url
     }
-    _, doc_ref = collection.add(category_data)
-    return {"message": "Category added successfully", "id": doc_ref.id, **category_data}
+    
+    doc_ref = collection.document(category_id)
+    doc_ref.set(category_data)
+    return {"message": "Category added successfully", "category_id": category_id, **category_data}
 
 # delete category
 @router.delete("/{category_id}", response_model=dict)
@@ -65,6 +73,7 @@ def delete_category(category_id: str):
     doc_ref.delete()
     return {
         "message": "Category is deleted successfully",
+        "category_id": category_id,
         "image_status": "Image deleted from Firebase Storage" if image_delete else "No image found or already deleted"
     }
 
@@ -120,7 +129,7 @@ def update_category(
     
     doc_ref.update(category_data)
     
-    return {"message": "Category updated successfully", "id": category_id, **category_data}
+    return {"message": "Category updated successfully", "category_id": category_id, **category_data}
 
 # get all categories
 @router.get("/", response_model=list[CategoryOut])
@@ -130,7 +139,7 @@ def get_all_categories():
 
     for doc in docs:
         category_data = doc.to_dict()
-        category_data['id'] = doc.id
+        category_data['category_id'] = doc.id
         categories.append(category_data)
     
     return categories
@@ -145,7 +154,7 @@ def get_category_by_id(category_id: str):
         raise HTTPException(status_code=404, detail="Category is not found")
     
     category_data = category.to_dict()
-    category_data['id'] = category.id
+    category_data['category_id'] = category.id
     return category_data
 
 # get categories by type
@@ -156,7 +165,7 @@ def get_categories_by_type(category_type: str):
 
     for doc in docs:
         category_data = doc.to_dict()
-        category_data['id'] = doc.id
+        category_data['category_id'] = doc.id
         categories.append(category_data)
     
     if not categories:

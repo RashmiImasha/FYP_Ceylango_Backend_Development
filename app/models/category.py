@@ -7,4 +7,4 @@ class Category(BaseModel):
     category_image: Optional[str]
 
 class CategoryOut(Category):
-    id: str
+    category_id: str
