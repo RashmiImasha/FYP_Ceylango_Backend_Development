@@ -113,7 +113,7 @@ def create_destination(
         "description": description,
         "destination_image": image_url,
         "image_phash": image_phash,
-        "category_id": category_id
+        "category_name": category_name
     }
 
     _, doc_ref = destination_collection.add(destination_data)
