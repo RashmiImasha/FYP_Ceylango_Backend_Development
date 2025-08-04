@@ -1,8 +1,11 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from firebase_admin import storage
 from app.database.connection import db
+from typing import Optional
 import uuid
-import hashlib
+import math
+from PIL import Image
+import imagehash
 
 from app.models.destination import Destination, DestinationOut
 from urllib.parse import urlparse
@@ -11,6 +14,26 @@ from urllib.parse import urlparse
 router = APIRouter()
 destination_collection = db.collection('destination')
 category_collection = db.collection('category')
+
+def haversine(lat1, lon1, lat2, lon2):
+    # calculate distance between two points on the Earth ( Radius )
+    R = 6371000
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+
+    a = math.sin(delta_phi/2.0)**2 + \
+        math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda/2.0)**2
+
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    return R * c
+
+def compute_phash(upload_file) -> str:
+    image = Image.open(upload_file)
+    phash = imagehash.phash(image)
+    return str(phash)
+
 
 # add destination
 @router.post("/", response_model=DestinationOut)
@@ -21,39 +44,58 @@ def create_destination(
     district_name: str = Form(...),
     description: str = Form(...),
     destination_image: UploadFile = File(...),
-    category_id: str = Form(...)
+    category_name: str = Form(...)
 ):
-    # Check if category exists
-    category_doc = category_collection.document(category_id).get()
-    if not category_doc.exists:
-        raise HTTPException(status_code=404, detail="Category not found")
     
-    category_name = category_doc.to_dict().get('category_name')
+    allow_imageType = ['image/jpeg', 'image/png']
+    if destination_image.content_type not in allow_imageType:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+    
+    # Check if category exists
+    category_query = category_collection \
+        .where('category_name', '==', category_name) \
+        .where('category_type', '==', 'location') \
+        .get()
+    
+    if not category_query:
+        raise HTTPException(status_code=404, detail="Category not found or not of type 'location'")
+    
+    category_doc = category_query[0]
+    category_id = category_doc.id
+    category_data = category_doc.to_dict()
 
     # check if destination name already exists
     existing_destination = destination_collection.where('destination_name', '==', destination_name).get()
     if existing_destination:
         raise HTTPException(status_code=400, detail="This Destination name already exists...!")
 
-    # Check if destination is already exists at this lat + lng
-    lat_matches = destination_collection.where('latitude', '==', latitude).stream()
-    for doc in lat_matches:
+    # check nearby locations_within ~5 meters
+    existing_destinations = destination_collection.stream()
+    for doc in existing_destinations:
         data = doc.to_dict()
-        # longitude comparison
-        if abs(data['longitude'] - longitude) < 1e-6:
-            raise HTTPException(status_code=400, detail="Destination at this latitude and longitude already exists")
+        existing_lat = data.get("latitude")
+        existing_lon = data.get("longitude")
 
-    # Compute SHA-256 hash of the image content
-    image_bytes = destination_image.file.read()
-    image_hash = hashlib.sha256(image_bytes).hexdigest()
+        if existing_lat is not None and existing_lon is not None:
+            distance = haversine(latitude, longitude, existing_lat, existing_lon)
+            if distance < 5:  # You can change this to 10 or 20 if you prefer a wider buffer
+                raise HTTPException(status_code=400, detail="A destination already exists very close to this location")
+            
+    # compute pHash of the image
+    destination_image.file.seek(0)  
+    image_phash = compute_phash(destination_image.file)
 
-    # Check if image hash already exists
-    existing_dest_image = destination_collection.stream()
-    for doc in existing_dest_image:
-        if doc.to_dict().get('image_hash') == image_hash:
-            raise HTTPException(status_code=400, detail="Image with this hash already exists")
+    # Check for visually similar image (threshold <= 5 is a good start)
+    existing_dest_images = destination_collection.stream()
+    for doc in existing_dest_images:
+        existing_phash = doc.to_dict().get('image_phash')
+        if existing_phash:
+            distance = imagehash.hex_to_hash(existing_phash) - imagehash.hex_to_hash(image_phash)
+            if distance <= 5:  # Adjust threshold as needed
+                raise HTTPException(status_code=400, detail="A visually similar image already exists.")
     
     # upload image to firebase storage
+    destination_image.file.seek(0)  # Reset file pointer
     bucket = storage.bucket()
     image_id = str(uuid.uuid4())
     blob = bucket.blob(f'destination_images/{image_id}_{destination_image.filename}')
@@ -70,7 +112,7 @@ def create_destination(
         "district_name": district_name,
         "description": description,
         "destination_image": image_url,
-        "image_hash": image_hash,
+        "image_phash": image_phash,
         "category_id": category_id
     }
 
@@ -97,7 +139,10 @@ def get_destination_byId(destination_id: str):
     # Fetch category name
     category_id = destination_data.get('category_id')
     category_doc = category_collection.document(category_id).get()
-    destination_data['category_name'] = category_doc.to_dict().get('category_name') if category_doc.exists else "Unknown Category"
+    if category_doc.exists:
+        destination_data['category_name'] = category_doc.to_dict().get('category_name')
+    else:
+        destination_data['category_name'] = "Unknown Category"
 
     return destination_data
 
@@ -110,8 +155,8 @@ def update_destination(
     longitude: float = Form(...),
     district_name: str = Form(...),
     description: str = Form(...),
-    destination_image: UploadFile = File(...),
-    category_id: str = Form(...)
+    destination_image: Optional[UploadFile] = File(None),
+    category_name: str = Form(...)
 ):
     doc_ref = destination_collection.document(destination_id)
     destination = doc_ref.get()
@@ -122,41 +167,66 @@ def update_destination(
     current_data = destination.to_dict()
     
     # Check if category exists
-    category_doc = category_collection.document(category_id).get()
-    if not category_doc.exists:
-        raise HTTPException(status_code=404, detail="Category not found")
+    matching_category = category_collection.where('category_name', '==', category_name).stream()
+    category_doc = None
+    for doc in matching_category:
+        cat_data = doc.to_dict()
+        if cat_data.get('category_type') == 'location':
+            category_doc = doc
+            break
     
-    category_name = category_doc.to_dict().get('category_name')
+    if not category_doc:
+        raise HTTPException(status_code=404, detail="Valid location category not found")    
+    
+    category_id = category_doc.id
 
     # Check if destination name already exists
     existing_destination = destination_collection.where('destination_name', '==', destination_name).stream()
-    if existing_destination and existing_destination[0].id != destination_id:
-        raise HTTPException(status_code=400, detail="This Destination name already exists...!")
-    
-    # Check for duplicate latitude + longitude (excluding self)
-    lat_matches = destination_collection.where("latitude", "==", latitude).stream()
-    for doc in lat_matches:
-        data = doc.to_dict()
-        if doc.id != destination_id and abs(data.get("longitude") - longitude) < 1e-6:
-            raise HTTPException(status_code=400, detail="A destination with this latitude and longitude already exists.")
+    for doc in existing_destination:
+        if doc.id != destination_id:
+            raise HTTPException(status_code=400, detail="This Destination name already exists...!")
 
+    
+    # Reject if updated location is too close to another existing destination
+    existing_destinations = destination_collection.stream()
+    for doc in existing_destinations:
+        if doc.id == destination_id:
+            continue
+        data = doc.to_dict()
+        existing_lat = data.get("latitude")
+        existing_lon = data.get("longitude")
+        if existing_lat is not None and existing_lon is not None:
+            distance = haversine(latitude, longitude, existing_lat, existing_lon)
+            if distance < 5:  
+                raise HTTPException(status_code=400, detail="Another destination already exists very close to this location")
+
+    # check image type
+    if destination_image:
+        allow_imageType = ['image/jpeg', 'image/png']
+        if destination_image.content_type not in allow_imageType:
+            raise HTTPException(status_code=400, detail="Unsupported file type")
+    
     # upload image to firebase storage
     image_url = current_data.get("destination_image")
-    image_hash = current_data.get("image_hash")
+    image_phash = current_data.get("image_phash")
 
     if destination_image:
-        # Compute SHA-256 hash of the new image content
-        new_image_bytes = destination_image.file.read()
-        new_image_hash = hashlib.sha256(new_image_bytes).hexdigest()
+        destination_image.file.seek(0)
+        new_phash = compute_phash(destination_image.file)
 
-        # Check if image hash already exists
-        existing_dest_image = destination_collection.stream()
-        for doc in existing_dest_image:
-            if doc.to_dict().get('image_hash') == new_image_hash and doc.id != destination_id:
-                raise HTTPException(status_code=400, detail="Image with this hash already exists")
-        
-        image_hash = new_image_hash
-        
+        # Check if visually similar image already exists
+        existing_dest_images = destination_collection.stream()
+        for doc in existing_dest_images:
+            if doc.id == destination_id:
+                continue  # Skip self
+            existing_phash = doc.to_dict().get('image_phash')
+            if existing_phash:
+                distance = imagehash.hex_to_hash(existing_phash) - imagehash.hex_to_hash(new_phash)
+                if distance <= 5:
+                    raise HTTPException(status_code=400, detail="A visually similar image already exists.")
+
+        image_phash = new_phash
+
         # Delete old image
         if image_url:
             parsed_url = urlparse(image_url)
@@ -166,14 +236,15 @@ def update_destination(
                 blob.delete()
 
         # Upload new image
-        destination_image.file.seek(0)  # Reset file pointer to the beginning
+        destination_image.file.seek(0)
         bucket = storage.bucket()
         image_id = str(uuid.uuid4())
         blob = bucket.blob(f'destination_images/{image_id}_{destination_image.filename}')
         blob.upload_from_file(destination_image.file, content_type=destination_image.content_type)
         blob.make_public()
         image_url = blob.public_url
-   
+
+        
     # Update destination data
     destination_data = {
         "destination_name": destination_name,
@@ -182,7 +253,7 @@ def update_destination(
         "district_name": district_name,
         "description": description,
         "destination_image": image_url,
-        "image_hash": image_hash,
+        "image_phash": image_phash,
         "category_id": category_id
     }
 
@@ -194,15 +265,16 @@ def update_destination(
         "category_name": category_name
     }
 
-
 # delete destination
 @router.delete("/{destination_id}", response_model=dict)
 def delete_destination(destination_id: str):
     doc_ref = destination_collection.document(destination_id)
-    if not doc_ref.get().exists:
+    doc = doc_ref.get()
+
+    if not doc.exists:
         raise HTTPException(status_code=404, detail="Destination not found")
     
-    data = doc_ref.to_dict()
+    data = doc.to_dict()
 
     # delete image from firebase storage 
     image_url = data.get('destination_image')
