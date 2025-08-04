@@ -2,9 +2,8 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from firebase_admin import storage
 from app.routes.destination_route import destination_collection
 from app.routes.category_route import collection
-from app.models.image import ImageDescriptionRequest, ImageDescriptionResponse,ImageAnalysis
-from app.utils.gemini_analyzer import analyze_image_withAI
-# import app.utils.category_mapper as category_mapper
+from app.models.image import ImageDescriptionRequest, ImageDescriptionResponse
+from app.utils.gemini_analyzer import analyze_image_withAI, ImageAnalysis
 import base64, uuid, io
 import math, imagehash
 from PIL import Image

@@ -113,7 +113,7 @@ def create_destination(
         "description": description,
         "destination_image": image_url,
         "image_phash": image_phash,
-        "category_id": category_id
+        "category_name": category_name
     }
 
     _, doc_ref = destination_collection.add(destination_data)
@@ -178,7 +178,7 @@ def update_destination(
     if not category_doc:
         raise HTTPException(status_code=404, detail="Valid location category not found")    
     
-    category_id = category_doc.id
+    category_name = category_doc.category_name
 
     # Check if destination name already exists
     existing_destination = destination_collection.where('destination_name', '==', destination_name).stream()
@@ -254,7 +254,7 @@ def update_destination(
         "description": description,
         "destination_image": image_url,
         "image_phash": image_phash,
-        "category_id": category_id
+        "category_name": category_name
     }
 
     doc_ref.update(destination_data)
@@ -295,3 +295,25 @@ def delete_destination(destination_id: str):
         "destination_id": destination_id,
         "image_status": "Image deleted from Firebase Storage" if image_delete else "No image found or already deleted"
     }
+
+# get all destinations
+@router.get("/", response_model=list[DestinationOut])
+def get_all_destinations():
+    destinations = destination_collection.stream()
+    result = []
+
+    for doc in destinations:
+        data = doc.to_dict()
+        data['id'] = doc.id
+
+        # Fetch category name
+        category_id = data.get('category_id')
+        category_doc = category_collection.document(category_id).get()
+        if category_doc.exists:
+            data['category_name'] = category_doc.to_dict().get('category_name')
+        else:
+            data['category_name'] = "Unknown Category"
+
+        result.append(data)
+
+    return result
