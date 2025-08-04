@@ -8,8 +8,8 @@ class Destination(BaseModel):
     district_name: str
     description: str 
     destination_image: str
-    category_id: str
-    image_hash: Optional[str] = None
+    category_name: str
+    image_phash: Optional[str] = None
     
 class DestinationOut(Destination):
    id: str
