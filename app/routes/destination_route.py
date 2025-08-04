@@ -9,8 +9,8 @@ from urllib.parse import urlparse
 
 # create router for destination routes
 router = APIRouter()
-destination_collection = db.collection('destination')  
-category_collection = db.collection('category')  
+destination_collection = db.collection('destination')
+category_collection = db.collection('category')
 
 # add destination
 @router.post("/", response_model=DestinationOut)
