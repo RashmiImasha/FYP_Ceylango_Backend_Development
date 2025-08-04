@@ -295,3 +295,25 @@ def delete_destination(destination_id: str):
         "destination_id": destination_id,
         "image_status": "Image deleted from Firebase Storage" if image_delete else "No image found or already deleted"
     }
+
+# get all destinations
+@router.get("/", response_model=list[DestinationOut])
+def get_all_destinations():
+    destinations = destination_collection.stream()
+    result = []
+
+    for doc in destinations:
+        data = doc.to_dict()
+        data['id'] = doc.id
+
+        # Fetch category name
+        category_id = data.get('category_id')
+        category_doc = category_collection.document(category_id).get()
+        if category_doc.exists:
+            data['category_name'] = category_doc.to_dict().get('category_name')
+        else:
+            data['category_name'] = "Unknown Category"
+
+        result.append(data)
+
+    return result
