@@ -12,8 +12,8 @@ from urllib.parse import urlparse
 
 # create router for destination routes
 router = APIRouter()
-destination_collection = db.collection('destination')  
-category_collection = db.collection('category')  
+destination_collection = db.collection('destination')
+category_collection = db.collection('category')
 
 def haversine(lat1, lon1, lat2, lon2):
     # calculate distance between two points on the Earth ( Radius )
@@ -113,7 +113,7 @@ def create_destination(
         "description": description,
         "destination_image": image_url,
         "image_phash": image_phash,
-        "category_id": category_id
+        "category_name": category_name
     }
 
     _, doc_ref = destination_collection.add(destination_data)
