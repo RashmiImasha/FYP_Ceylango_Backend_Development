@@ -6,7 +6,7 @@ from app.models.image import ImageDescriptionRequest, ImageDescriptionResponse
 from app.utils.gemini_analyzer import analyze_image_withAI
 import app.utils.category_mapper as category_mapper
 import base64, uuid, io
-import math, imagehash
+import math, imagehash    
 from PIL import Image
 
 router = APIRouter()
