@@ -8,7 +8,6 @@ firebase-admin==7.1.0
 # Data Validation
 pydantic==1.10.22
 
-
 # Environment Variables
 python-dotenv==1.0.1
 pydantic-settings
@@ -18,5 +17,11 @@ pydantic-settings
 httpx==0.28.1
 pytest==8.2.2
 python-multipart==0.0.20
+pillow
+imagehash
+
+# AI and Image Processing
+langchain-google-genai
+langchain-core
 
 

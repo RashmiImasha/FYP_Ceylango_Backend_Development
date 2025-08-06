@@ -178,7 +178,7 @@ def update_destination(
     if not category_doc:
         raise HTTPException(status_code=404, detail="Valid location category not found")    
     
-    category_id = category_doc.id
+    category_name = category_doc.category_name
 
     # Check if destination name already exists
     existing_destination = destination_collection.where('destination_name', '==', destination_name).stream()
@@ -254,7 +254,7 @@ def update_destination(
         "description": description,
         "destination_image": image_url,
         "image_phash": image_phash,
-        "category_id": category_id
+        "category_name": category_name
     }
 
     doc_ref.update(destination_data)
