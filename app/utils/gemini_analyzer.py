@@ -22,6 +22,7 @@ class CategoryEnum(str, Enum):
     Sacred = "Sacred"
     Rainforests = "Rainforests"
     Gardens = "Gardens"
+    Unknown = "Unknown"
 
 class DestinationAnalysis(BaseModel):
     destination_name: str = Field(..., description="Name of the destination")
