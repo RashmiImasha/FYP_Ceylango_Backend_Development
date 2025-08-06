@@ -10,6 +10,8 @@ pydantic==1.10.22
 
 # Environment Variables
 python-dotenv==1.0.1
+pydantic-settings
+
 
 # Development tools (optional)
 httpx==0.28.1
