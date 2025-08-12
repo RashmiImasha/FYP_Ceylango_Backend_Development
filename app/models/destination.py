@@ -18,3 +18,6 @@ class DestinationOut(Destination):
    model_config = ConfigDict(
        exclude = {'image_phash', 'district_name_lower'}
    )
+
+class DestinationNearBy(DestinationOut):
+    distance: float # in km

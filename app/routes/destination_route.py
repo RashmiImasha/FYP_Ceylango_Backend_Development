@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
-from app.models.destination import DestinationOut
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
+from app.models.destination import DestinationOut, DestinationNearBy
 from app.utils.destinationUtils import haversine, compute_phash
 from firebase_admin import storage
 from app.database.connection import db
@@ -294,4 +294,47 @@ def get_destination_byDistrict(district_name: str):
     if not result:
         raise HTTPException(status_code=404, detail=f"No destinations found in district '{district_name}'")
 
+    return result
+
+# get nearby destination ( default : 10km )
+@router.get("/near/nearby", response_model=list[DestinationNearBy])
+def get_nearBy(
+    latitude: float = Query(..., description="User's current latitude"),
+    longitude: float = Query(..., description="User's current longitude"),
+    radius_range: float = 10 # in km
+):
+    # print("get_nearBy route called")
+
+    destinations = destination_collection.stream()
+    result = []
+
+    # print(f"User coords: {latitude}, {longitude}")
+
+    for doc in destinations:
+        data = doc.to_dict()
+        dest_latitude = data.get("latitude")
+        dest_longitude = data.get("longitude")
+
+        # # check values and types
+        # print(f"Destination: {data.get('destination_name')}")
+        # print(f"Latitude: {dest_latitude} (type: {type(dest_latitude)})")
+        # print(f"Longitude: {dest_longitude} (type: {type(dest_longitude)})")
+
+        if dest_latitude is not None and dest_longitude is not None:
+            distance = haversine(latitude, longitude, dest_latitude, dest_longitude)
+
+            print(f"Checking destination: {data.get('destination_name')} "
+                  f"at {dest_latitude}, {dest_longitude}")
+            print(f"Distance: {distance/1000:.2f} km")
+
+            if distance <= radius_range*1000:
+                data["id"] = doc.id
+                data["distance"] = round(distance/1000, 2)
+                result.append(data)
+    
+    result.sort(key=lambda x: x['distance'])  # sort by closest first
+
+    if not result:
+        raise HTTPException(status_code=404, detail=f"No destinations found within {radius_range} km.")
+    
     return result
