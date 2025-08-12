@@ -1,39 +1,16 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from app.models.destination import DestinationOut
+from app.utils.destinationUtils import haversine, compute_phash
 from firebase_admin import storage
 from app.database.connection import db
 from typing import Optional
-import uuid
-import math
-from PIL import Image
-import imagehash
-
-from app.models.destination import Destination, DestinationOut
+import uuid, imagehash
 from urllib.parse import urlparse
 
 # create router for destination routes
 router = APIRouter()
 destination_collection = db.collection('destination')
 category_collection = db.collection('category')
-
-def haversine(lat1, lon1, lat2, lon2):
-    # calculate distance between two points on the Earth ( Radius )
-    R = 6371000
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    delta_phi = math.radians(lat2 - lat1)
-    delta_lambda = math.radians(lon2 - lon1)
-
-    a = math.sin(delta_phi/2.0)**2 + \
-        math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda/2.0)**2
-
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-    return R * c
-
-def compute_phash(upload_file) -> str:
-    image = Image.open(upload_file)
-    phash = imagehash.phash(image)
-    return str(phash)
-
 
 # add destination
 @router.post("/", response_model=DestinationOut)
@@ -46,6 +23,9 @@ def create_destination(
     destination_image: UploadFile = File(...),
     category_name: str = Form(...)
 ):
+    destination_name = destination_name.strip()
+    district_name = district_name.strip()
+    category_name = category_name.strip()
     
     allow_imageType = ['image/jpeg', 'image/png']
     if destination_image.content_type not in allow_imageType:
@@ -58,12 +38,8 @@ def create_destination(
         .get()
     
     if not category_query:
-        raise HTTPException(status_code=404, detail="Category not found or not of type 'location'")
-    
-    category_doc = category_query[0]
-    category_id = category_doc.id
-    category_data = category_doc.to_dict()
-
+        raise HTTPException(status_code=404, detail="Category not found or not of type 'location'")    
+   
     # check if destination name already exists
     existing_destination = destination_collection.where('destination_name', '==', destination_name).get()
     if existing_destination:
@@ -78,7 +54,7 @@ def create_destination(
 
         if existing_lat is not None and existing_lon is not None:
             distance = haversine(latitude, longitude, existing_lat, existing_lon)
-            if distance < 5:  # You can change this to 10 or 20 if you prefer a wider buffer
+            if distance < 5:  # can change this to 10 or 20 if you prefer a wider buffer
                 raise HTTPException(status_code=400, detail="A destination already exists very close to this location")
             
     # compute pHash of the image
@@ -110,6 +86,7 @@ def create_destination(
         "latitude": latitude,
         "longitude": longitude,
         "district_name": district_name,
+        "district_name_lower": district_name.lower(),
         "description": description,
         "destination_image": image_url,
         "image_phash": image_phash,
@@ -117,12 +94,7 @@ def create_destination(
     }
 
     _, doc_ref = destination_collection.add(destination_data)
-
-    return {
-        "id": doc_ref.id,
-        **destination_data,
-        "category_name": category_name
-    }
+    return DestinationOut(id=doc_ref.id, **destination_data)
 
 # get destinations by id
 @router.get("/{destination_id}", response_model=DestinationOut)
@@ -134,16 +106,7 @@ def get_destination_byId(destination_id: str):
         raise HTTPException(status_code=404, detail="Destination not found")
     
     destination_data = destination.to_dict()
-    destination_data['id'] = destination.id
-    
-    # Fetch category name
-    category_id = destination_data.get('category_id')
-    category_doc = category_collection.document(category_id).get()
-    if category_doc.exists:
-        destination_data['category_name'] = category_doc.to_dict().get('category_name')
-    else:
-        destination_data['category_name'] = "Unknown Category"
-
+    destination_data['id'] = destination.id 
     return destination_data
 
 # update destination by id
@@ -158,6 +121,10 @@ def update_destination(
     destination_image: Optional[UploadFile] = File(None),
     category_name: str = Form(...)
 ):
+    destination_name = destination_name.strip()
+    district_name = district_name.strip()
+    category_name = category_name.strip()
+
     doc_ref = destination_collection.document(destination_id)
     destination = doc_ref.get()
     
@@ -178,7 +145,7 @@ def update_destination(
     if not category_doc:
         raise HTTPException(status_code=404, detail="Valid location category not found")    
     
-    category_name = category_doc.category_name
+    category_name = category_doc.to_dict().get("category_name")
 
     # Check if destination name already exists
     existing_destination = destination_collection.where('destination_name', '==', destination_name).stream()
@@ -251,6 +218,7 @@ def update_destination(
         "latitude": latitude,
         "longitude": longitude,
         "district_name": district_name,
+        "district_name_lower": district_name.lower(),
         "description": description,
         "destination_image": image_url,
         "image_phash": image_phash,
@@ -262,7 +230,6 @@ def update_destination(
     return {
         "id": destination_id,
         **destination_data,
-        "category_name": category_name
     }
 
 # delete destination
@@ -304,16 +271,27 @@ def get_all_destinations():
 
     for doc in destinations:
         data = doc.to_dict()
-        data['id'] = doc.id
-
-        # Fetch category name
-        category_id = data.get('category_id')
-        category_doc = category_collection.document(category_id).get()
-        if category_doc.exists:
-            data['category_name'] = category_doc.to_dict().get('category_name')
-        else:
-            data['category_name'] = "Unknown Category"
+        data['id'] = doc.id       
 
         result.append(data)
+
+    return result
+
+# get destination by district name
+@router.get("/district/{district_name}", response_model=list[DestinationOut])
+def get_destination_byDistrict(district_name: str):
+
+    destinations = destination_collection.where(
+        "district_name_lower", "==", district_name.lower()
+    ).stream()
+
+    result = []
+    for doc in destinations:
+        data = doc.to_dict()
+        data["id"] = doc.id
+        result.append(data)
+    
+    if not result:
+        raise HTTPException(status_code=404, detail=f"No destinations found in district '{district_name}'")
 
     return result

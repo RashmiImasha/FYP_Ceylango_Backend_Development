@@ -1,8 +1,8 @@
-from pydantic import BaseModel
+# from pydantic import BaseModel
 
-class ImageDescriptionRequest(BaseModel):
-    image_base64: str
+# class ImageDescriptionRequest(BaseModel):
+#     image_base64: str
 
-class ImageDescriptionResponse(BaseModel):
-    description: str
+# class ImageDescriptionResponse(BaseModel):
+#     description: str
     

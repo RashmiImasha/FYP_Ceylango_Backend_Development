@@ -2,8 +2,8 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from firebase_admin import storage
 from app.routes.destination_route import destination_collection
 from app.routes.category_route import collection
-from app.models.image import ImageDescriptionRequest, ImageDescriptionResponse
-from app.utils.gemini_analyzer import analyze_image_withAI, ImageAnalysis
+# from app.models.image import ImageDescriptionRequest, ImageDescriptionResponse
+from app.utils.google_analyzer import analyze_image_withAI, ImageAnalysis
 import base64, uuid, io
 import math, imagehash
 from PIL import Image
@@ -33,7 +33,7 @@ def compute_phash(upload_file) -> str:
 @router.post("/uploadImage", response_model=ImageAnalysis)
 async def analyze_image(file: UploadFile = File(...)):
     try:
-        # Read the image file and convert it to base64
+        # Read the image file
         image_data = await file.read()
         encoded_image = base64.b64encode(image_data).decode('utf-8')
 
@@ -43,12 +43,10 @@ async def analyze_image(file: UploadFile = File(...)):
                 "1. The exact place name.\n"
                 "2. Its district.\n"
                 "3. A brief but informative historical and cultural description.\n"
-                "Note: Avoid guessing. Respond only with confirmed facts visible in the image."
-                        
+                "Note: Avoid guessing. Respond only with confirmed facts visible in the image."                        
         )
 
         result = analyze_image_withAI(encoded_image, prompt,"uploadImage")
-
         return result
     
     except Exception as e:
@@ -94,8 +92,7 @@ async def snap_image_analyze(
     result = analyze_image_withAI(encoded_image, prompt,"snapImage")
 
     if not result:
-        raise HTTPException(status_code=500, detail="Failed to analyze image with AI.")
-    
+        raise HTTPException(status_code=500, detail="Failed to analyze image with AI.")    
 
     destination_name = result.destination_name
     district_name = result.district_name
@@ -158,7 +155,8 @@ async def snap_image_analyze(
             "description": description,
             "destination_image": image_url,
             "category_name": raw_category_name.value,
-            "image_phash": image_phash
+            "image_phash": image_phash,
+            "district_name_lower": district_name.lower(),
         }
 
         _, doc_ref = destination_collection.add(destination_data)

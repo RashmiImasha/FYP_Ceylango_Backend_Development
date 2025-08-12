@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 
 class Destination(BaseModel):
@@ -10,7 +10,11 @@ class Destination(BaseModel):
     destination_image: str
     category_name: str
     image_phash: Optional[str] = None
+    district_name_lower: Optional[str] = None
     
 class DestinationOut(Destination):
    id: str
-   category_name: str
+   
+   model_config = ConfigDict(
+       exclude = {'image_phash', 'district_name_lower'}
+   )
