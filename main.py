@@ -7,6 +7,9 @@ from app.routes.destination_route import router as destination_route
 from app.routes.image_route import router as image_route
 from app.routes.emergancy_route import router as emergancy_route
 
+# service_provider routes
+from app.routes.service_providers.event_route import router as event_route
+
 # Create FastAPI app
 app = FastAPI()
 
@@ -26,6 +29,7 @@ app.include_router(auth_route, prefix="/auth")
 app.include_router(destination_route, prefix="/destination")
 app.include_router(emergancy_route, prefix="/emergancy")
 
+app.include_router(event_route, prefix="/event")
 
 @app.get("/")
 def root():
