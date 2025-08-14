@@ -1,11 +1,10 @@
 from fastapi import APIRouter, HTTPException, UploadFile, status, Form, File
-from app.models.service_providers.events import Event, EventResponse
+from app.models.service_providers.events import EventResponse
 from app.utils.storage_handle import upload_file_to_storage, delete_file_from_storage, update_file_in_storage
 from app.database.connection import db
-# from firebase_admin import storage
 from typing import List, Optional
 from pydantic import EmailStr
-from datetime import date, time
+from datetime import date as DateType, time as TimeType
 
 router = APIRouter()
 event_collection = db.collection("events")
@@ -14,8 +13,8 @@ event_collection = db.collection("events")
 @router.post("/", response_model=EventResponse)
 def add_event(
     event_name: str = Form(...),
-    date: date = Form(...),
-    time: time = Form(...),
+    date: DateType = Form(...),
+    time: TimeType = Form(...),
     venue: str = Form(...),
     event_lat: float = Form(...),
     event_lon: float = Form(...),
@@ -36,13 +35,14 @@ def add_event(
     existing_event = (
         event_collection
         .where("event_name", "==", event_name) 
+        .where("venue", "==", venue)
         .where("date", "==", str(date)) 
         .where("time", "==", str(time)) 
         .get()
     )  
         
     if len(existing_event) > 0:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="An event with the same name, date, and time already exists.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="An event with the same name, date, time and venue already exists.")
             
     # upload post
     post_url = upload_file_to_storage(post, "event_posts")
@@ -150,16 +150,18 @@ def delete_event(event_id: str):
 def update_event(
     event_id: str,
     event_name: Optional[str] = Form(None),
-    date: Optional[date] = Form(None),
-    time: Optional[time] = Form(None),
+    date: Optional[DateType] = Form(None),
+    time: Optional[TimeType] = Form(None),
     venue: Optional[str] = Form(None),
     event_lat: Optional[float] = Form(None),
     event_lon: Optional[float] = Form(None),
     description: Optional[str] = Form(None),
     post: Optional[UploadFile] = File(None),
     event_image: List[UploadFile] = File(default=[]),
+    remove_images: bool = Form(False),
     event_video: List[UploadFile] = File(default=[]),
-    email: Optional[str] = Form(None)
+    remove_video: bool = Form(False),
+    email: Optional[EmailStr] = Form(None)
 ):
     doc_ref = event_collection.document(event_id)
     doc = doc_ref.get()
@@ -169,11 +171,35 @@ def update_event(
 
     data = doc.to_dict()
 
+    if event_name and date and time and venue:
+        existing_event = (
+            event_collection
+            .where("event_name", "==", event_name)
+            .where("venue", "==", venue)
+            .where("date", "==", str(date))
+            .where("time", "==", str(time))
+            .get()
+        )
+        
+        if any(e.id != event_id for e in existing_event):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="An event with the same name, date, time, and venue already exists."
+            )
+        
+    event_image = [img for img in event_image if img.filename]
+    event_video = [vid for vid in event_video if vid.filename]
+    auto_remove_images = remove_images or (event_image == [] and event_image is not None)
+    auto_remove_video = remove_video or (event_video == [] and event_video is not None)
+
+    # Update files (replace or delete)
     data = update_file_in_storage(
         current_data=data,
         new_post=post,
         new_images=event_image if event_image else None,
-        new_video=event_video if event_video else None
+        remove_images=auto_remove_images,
+        new_video=event_video if event_video else None,
+        remove_video=auto_remove_video
     )
 
     for field, value in {
@@ -190,9 +216,9 @@ def update_event(
             data[field] = value
 
     update_dict = data.copy()
-    if isinstance(update_dict.get("date"), date):
+    if isinstance(update_dict.get("date"), DateType):
         update_dict["date"] = update_dict["date"].isoformat()
-    if isinstance(update_dict.get("time"), time):
+    if isinstance(update_dict.get("time"), TimeType):
         update_dict["time"] = update_dict["time"].strftime("%H:%M:%S")
 
     doc_ref.update(update_dict)

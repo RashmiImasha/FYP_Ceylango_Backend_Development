@@ -2,33 +2,11 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from firebase_admin import storage
 from app.routes.destination_route import destination_collection
 from app.routes.category_route import collection
-# from app.models.image import ImageDescriptionRequest, ImageDescriptionResponse
 from app.utils.google_analyzer import analyze_image_withAI, ImageAnalysis
-import base64, uuid, io
-import math, imagehash
-from PIL import Image
+from app.utils.destinationUtils import haversine, compute_phash
+import base64, uuid, io, imagehash
 
 router = APIRouter()
-
-def haversine(lat1, lon1, lat2, lon2):
-    # calculate distance between two points on the Earth ( Radius )
-    R = 6371000
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    delta_phi = math.radians(lat2 - lat1)
-    delta_lambda = math.radians(lon2 - lon1)
-
-    a = math.sin(delta_phi/2.0)**2 + \
-        math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda/2.0)**2
-
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-    return R * c
-
-def compute_phash(upload_file) -> str:
-    image = Image.open(upload_file)
-    phash = imagehash.phash(image)
-    return str(phash)
-
 
 @router.post("/uploadImage", response_model=ImageAnalysis)
 async def analyze_image(file: UploadFile = File(...)):
@@ -84,7 +62,7 @@ async def snap_image_analyze(
         "1. The exact name of the place (landmark or natural location).\n"
         "2. The district or local area name.\n"
         "3. The type of place. Choose ONLY ONE from: Beach, Waterfalls, Mountains, Historical, Sacred, Rainforests, Gardens.\n"
-        "4. A short description including any historical or cultural value.\n\n"
+        "4. A brief but informative historical and cultural description.\n\n"
         " Be extremely accurate and give the answer *only* if the image and coordinates clearly match a known location."
     )
 
@@ -163,6 +141,8 @@ async def snap_image_analyze(
         print("destination",destination_data)
         
     return {
+        "destination_name": destination_name,
+        "district_name": district_name,
         "description": description             
     }
 
