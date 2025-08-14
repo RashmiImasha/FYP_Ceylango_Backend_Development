@@ -1,3 +1,8 @@
+Cython
+setuptools
+wheel
+PyYAML==5.4.1
+
 # Web Framework
 fastapi==0.110.0
 uvicorn[standard]==0.29.0
