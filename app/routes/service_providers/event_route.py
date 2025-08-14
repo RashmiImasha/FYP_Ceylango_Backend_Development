@@ -105,8 +105,8 @@ def get_event_byId(event_id: str):
     return event_data
 
 # get all events
-@router.get("/", response_model=list[EventResponse])
-def get_allEvent():
+@router.get("/event/all", response_model=list[EventResponse])
+def get_all_Event():
     events = event_collection.stream()
     result = []
 
@@ -115,6 +115,21 @@ def get_allEvent():
         data['id'] = doc.id
         result.append(data)
 
+    return result
+
+# get all events without expired data
+@router.get("/", response_model=list[EventResponse])
+def get_upcoming_event():
+
+    today = DateType.today().isoformat()
+    events = event_collection.where("date", ">=", today).stream()
+    
+    result = []
+    for doc in events:
+        data = doc.to_dict()
+        data['id'] = doc.id
+        result.append(data)
+    
     return result
 
 # delete event data
@@ -224,3 +239,4 @@ def update_event(
     doc_ref.update(update_dict)
 
     return EventResponse(**data, id=event_id)
+
