@@ -1,6 +1,6 @@
 schemaVersion: "1.2"
 endpoints:
-    - name: fyp
+    - name: fyp-entity-123
       displayName: FYP Backend
       service:
         basePath: /
