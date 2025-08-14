@@ -28,5 +28,5 @@ imagehash
 # AI and Image Processing
 langchain-google-genai
 langchain-core
-
+pydantic[email]
 
