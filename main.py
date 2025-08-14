@@ -1,3 +1,4 @@
+import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -34,3 +35,6 @@ app.include_router(event_route, prefix="/event")
 @app.get("/")
 def root():
     return {"message": "Firestore backend is running"}
+
+if __name__ == "__main__" :
+    uvicorn.run(app, host = "0.0.0.0", port = 9090, log_level = "info")

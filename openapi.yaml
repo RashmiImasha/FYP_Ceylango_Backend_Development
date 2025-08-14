@@ -1,0 +1,1319 @@
+openapi: 3.0.0
+info:
+  title: FastAPI
+  version: 0.1.0
+servers:
+  - url: http://0.0.0.0:9090
+    description: Local development server
+paths:
+  /image/uploadImage:
+    post:
+      summary: Analyze Image
+      operationId: analyze_image_image_uploadImage_post
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_analyze_image_image_uploadImage_post'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageAnalysis'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /image/snapImage:
+    post:
+      summary: Snap Image Analyze
+      operationId: snap_image_analyze_image_snapImage_post
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_snap_image_analyze_image_snapImage_post'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /category/:
+    get:
+      summary: Get All Categories
+      operationId: get_all_categories_category__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/CategoryOut'
+                type: array
+                title: Response Get All Categories Category  Get
+    post:
+      summary: Create Category
+      operationId: create_category_category__post
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_create_category_category__post'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /category/{category_id}:
+    delete:
+      summary: Delete Category
+      operationId: delete_category_category__category_id__delete
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Delete Category Category  Category Id  Delete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      summary: Update Category
+      operationId: update_category_category__category_id__put
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_update_category_category__category_id__put'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      summary: Get Category By Id
+      operationId: get_category_by_id_category__category_id__get
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /category/type/{category_type}:
+    get:
+      summary: Get Categories By Type
+      operationId: get_categories_by_type_category_type__category_type__get
+      parameters:
+      - name: category_type
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Type
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CategoryOut'
+                title: Response Get Categories By Type Category Type  Category Type  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /auth/signup:
+    post:
+      summary: Signup
+      operationId: signup_auth_signup_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreate'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /auth/login:
+    get:
+      summary: Get Profile
+      operationId: get_profile_auth_login_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /destination/:
+    get:
+      summary: Get All Destinations
+      operationId: get_all_destinations_destination__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/DestinationOut'
+                type: array
+                title: Response Get All Destinations Destination  Get
+    post:
+      summary: Create Destination
+      operationId: create_destination_destination__post
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_create_destination_destination__post'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DestinationOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /destination/{destination_id}:
+    get:
+      summary: Get Destination Byid
+      operationId: get_destination_byId_destination__destination_id__get
+      parameters:
+      - name: destination_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Destination Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DestinationOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      summary: Update Destination
+      operationId: update_destination_destination__destination_id__put
+      parameters:
+      - name: destination_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Destination Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_update_destination_destination__destination_id__put'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DestinationOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      summary: Delete Destination
+      operationId: delete_destination_destination__destination_id__delete
+      parameters:
+      - name: destination_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Destination Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Delete Destination Destination  Destination Id  Delete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /destination/district/{district_name}:
+    get:
+      summary: Get Destination Bydistrict
+      operationId: get_destination_byDistrict_destination_district__district_name__get
+      parameters:
+      - name: district_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: District Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DestinationOut'
+                title: Response Get Destination Bydistrict Destination District  District
+                  Name  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /destination/near/nearby:
+    get:
+      summary: Get Nearby
+      operationId: get_nearBy_destination_near_nearby_get
+      parameters:
+      - name: latitude
+        in: query
+        required: true
+        schema:
+          type: number
+          description: User's current latitude
+          title: Latitude
+        description: User's current latitude
+      - name: longitude
+        in: query
+        required: true
+        schema:
+          type: number
+          description: User's current longitude
+          title: Longitude
+        description: User's current longitude
+      - name: radius_range
+        in: query
+        required: false
+        schema:
+          type: number
+          default: 10
+          title: Radius Range
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DestinationNearBy'
+                title: Response Get Nearby Destination Near Nearby Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /emergancy/:
+    get:
+      summary: Get All Econtact
+      operationId: get_all_eContact_emergancy__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/EmergancyContact'
+                type: array
+                title: Response Get All Econtact Emergancy  Get
+    post:
+      summary: Add Econtact
+      operationId: add_eContact_emergancy__post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmergancyContact'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmergancyContactResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /emergancy/{contact_id}:
+    put:
+      summary: Update Econtact
+      operationId: update_eContact_emergancy__contact_id__put
+      parameters:
+      - name: contact_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Contact Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmergancyContact'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmergancyContactResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      summary: Get Econtact Byid
+      operationId: get_eContact_byId_emergancy__contact_id__get
+      parameters:
+      - name: contact_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Contact Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmergancyContact'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      summary: Delete Econtact
+      operationId: delete_eContact_emergancy__contact_id__delete
+      parameters:
+      - name: contact_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Contact Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /emergancy/eData/nearBy:
+    get:
+      summary: Get Nearest Econtact
+      operationId: get_nearest_eContact_emergancy_eData_nearBy_get
+      parameters:
+      - name: user_lat
+        in: query
+        required: true
+        schema:
+          type: number
+          description: User's latitude
+          title: User Lat
+        description: User's latitude
+      - name: user_lon
+        in: query
+        required: true
+        schema:
+          type: number
+          description: User's longitude
+          title: User Lon
+        description: User's longitude
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                anyOf:
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/EmergancyNearest'
+                - $ref: '#/components/schemas/EmergancyNearest'
+                title: Response Get Nearest Econtact Emergancy Edata Nearby Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /event/:
+    get:
+      summary: Get Upcoming Event
+      operationId: get_upcoming_event_event__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/EventResponse'
+                type: array
+                title: Response Get Upcoming Event Event  Get
+    post:
+      summary: Add Event
+      operationId: add_event_event__post
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_add_event_event__post'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /event/{event_id}:
+    get:
+      summary: Get Event Byid
+      operationId: get_event_byId_event__event_id__get
+      parameters:
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Event Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      summary: Delete Event
+      operationId: delete_event_event__event_id__delete
+      parameters:
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Event Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Delete Event Event  Event Id  Delete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      summary: Update Event
+      operationId: update_event_event__event_id__put
+      parameters:
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Event Id
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_update_event_event__event_id__put'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /event/event/all:
+    get:
+      summary: Get All Event
+      operationId: get_all_Event_event_event_all_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/EventResponse'
+                type: array
+                title: Response Get All Event Event Event All Get
+  /:
+    get:
+      summary: Root
+      operationId: root__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+components:
+  schemas:
+    Body_add_event_event__post:
+      properties:
+        event_name:
+          type: string
+          title: Event Name
+        date:
+          type: string
+          format: date
+          title: Date
+        time:
+          type: string
+          format: time
+          title: Time
+        venue:
+          type: string
+          title: Venue
+        event_lat:
+          type: number
+          title: Event Lat
+        event_lon:
+          type: number
+          title: Event Lon
+        description:
+          type: string
+          title: Description
+        post:
+          type: string
+          format: binary
+          title: Post
+        event_image:
+          items:
+            type: string
+            format: binary
+          type: array
+          title: Event Image
+          default: []
+        event_video:
+          items:
+            type: string
+            format: binary
+          type: array
+          title: Event Video
+          default: []
+        email:
+          type: string
+          format: email
+          title: Email
+      type: object
+      required:
+      - event_name
+      - date
+      - time
+      - venue
+      - event_lat
+      - event_lon
+      - description
+      - post
+      - email
+      title: Body_add_event_event__post
+    Body_analyze_image_image_uploadImage_post:
+      properties:
+        file:
+          type: string
+          format: binary
+          title: File
+      type: object
+      required:
+      - file
+      title: Body_analyze_image_image_uploadImage_post
+    Body_create_category_category__post:
+      properties:
+        category_id:
+          type: string
+          title: Category Id
+        category_name:
+          type: string
+          title: Category Name
+        category_type:
+          type: string
+          title: Category Type
+        category_image:
+          type: string
+          format: binary
+          title: Category Image
+      type: object
+      required:
+      - category_id
+      - category_name
+      - category_type
+      - category_image
+      title: Body_create_category_category__post
+    Body_create_destination_destination__post:
+      properties:
+        destination_name:
+          type: string
+          title: Destination Name
+        latitude:
+          type: number
+          title: Latitude
+        longitude:
+          type: number
+          title: Longitude
+        district_name:
+          type: string
+          title: District Name
+        description:
+          type: string
+          title: Description
+        destination_image:
+          type: string
+          format: binary
+          title: Destination Image
+        category_name:
+          type: string
+          title: Category Name
+      type: object
+      required:
+      - destination_name
+      - latitude
+      - longitude
+      - district_name
+      - description
+      - destination_image
+      - category_name
+      title: Body_create_destination_destination__post
+    Body_snap_image_analyze_image_snapImage_post:
+      properties:
+        latitude:
+          type: number
+          title: Latitude
+        longitude:
+          type: number
+          title: Longitude
+        destination_image:
+          type: string
+          format: binary
+          title: Destination Image
+      type: object
+      required:
+      - latitude
+      - longitude
+      - destination_image
+      title: Body_snap_image_analyze_image_snapImage_post
+    Body_update_category_category__category_id__put:
+      properties:
+        category_name:
+          type: string
+          title: Category Name
+        category_type:
+          type: string
+          title: Category Type
+        category_image:
+          anyOf:
+          - type: string
+            format: binary
+          - type: 'null'
+          title: Category Image
+      type: object
+      required:
+      - category_name
+      - category_type
+      title: Body_update_category_category__category_id__put
+    Body_update_destination_destination__destination_id__put:
+      properties:
+        destination_name:
+          type: string
+          title: Destination Name
+        latitude:
+          type: number
+          title: Latitude
+        longitude:
+          type: number
+          title: Longitude
+        district_name:
+          type: string
+          title: District Name
+        description:
+          type: string
+          title: Description
+        destination_image:
+          anyOf:
+          - type: string
+            format: binary
+          - type: 'null'
+          title: Destination Image
+        category_name:
+          type: string
+          title: Category Name
+      type: object
+      required:
+      - destination_name
+      - latitude
+      - longitude
+      - district_name
+      - description
+      - category_name
+      title: Body_update_destination_destination__destination_id__put
+    Body_update_event_event__event_id__put:
+      properties:
+        event_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Event Name
+        date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Date
+        time:
+          anyOf:
+          - type: string
+            format: time
+          - type: 'null'
+          title: Time
+        venue:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Venue
+        event_lat:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Event Lat
+        event_lon:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Event Lon
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        post:
+          anyOf:
+          - type: string
+            format: binary
+          - type: 'null'
+          title: Post
+        event_image:
+          items:
+            type: string
+            format: binary
+          type: array
+          title: Event Image
+          default: []
+        remove_images:
+          type: boolean
+          title: Remove Images
+          default: false
+        event_video:
+          items:
+            type: string
+            format: binary
+          type: array
+          title: Event Video
+          default: []
+        remove_video:
+          type: boolean
+          title: Remove Video
+          default: false
+        email:
+          anyOf:
+          - type: string
+            format: email
+          - type: 'null'
+          title: Email
+      type: object
+      title: Body_update_event_event__event_id__put
+    CategoryOut:
+      properties:
+        category_name:
+          type: string
+          title: Category Name
+        category_type:
+          type: string
+          title: Category Type
+        category_image:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Category Image
+        category_id:
+          type: string
+          title: Category Id
+      type: object
+      required:
+      - category_name
+      - category_type
+      - category_image
+      - category_id
+      title: CategoryOut
+    DestinationNearBy:
+      properties:
+        destination_name:
+          type: string
+          title: Destination Name
+        latitude:
+          type: number
+          title: Latitude
+        longitude:
+          type: number
+          title: Longitude
+        district_name:
+          type: string
+          title: District Name
+        description:
+          type: string
+          title: Description
+        destination_image:
+          type: string
+          title: Destination Image
+        category_name:
+          type: string
+          title: Category Name
+        image_phash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Image Phash
+        district_name_lower:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: District Name Lower
+        id:
+          type: string
+          title: Id
+        distance:
+          type: number
+          title: Distance
+      type: object
+      required:
+      - destination_name
+      - latitude
+      - longitude
+      - district_name
+      - description
+      - destination_image
+      - category_name
+      - id
+      - distance
+      title: DestinationNearBy
+    DestinationOut:
+      properties:
+        destination_name:
+          type: string
+          title: Destination Name
+        latitude:
+          type: number
+          title: Latitude
+        longitude:
+          type: number
+          title: Longitude
+        district_name:
+          type: string
+          title: District Name
+        description:
+          type: string
+          title: Description
+        destination_image:
+          type: string
+          title: Destination Image
+        category_name:
+          type: string
+          title: Category Name
+        image_phash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Image Phash
+        district_name_lower:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: District Name Lower
+        id:
+          type: string
+          title: Id
+      type: object
+      required:
+      - destination_name
+      - latitude
+      - longitude
+      - district_name
+      - description
+      - destination_image
+      - category_name
+      - id
+      title: DestinationOut
+    EmergancyContact:
+      properties:
+        id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Id
+        police_unit:
+          type: string
+          title: Police Unit
+        police_district:
+          type: string
+          title: Police District
+        police_latitude:
+          type: number
+          title: Police Latitude
+        police_longitude:
+          type: number
+          title: Police Longitude
+        police_contact:
+          items:
+            type: string
+          type: array
+          title: Police Contact
+      type: object
+      required:
+      - police_unit
+      - police_district
+      - police_latitude
+      - police_longitude
+      - police_contact
+      title: EmergancyContact
+    EmergancyContactResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+        data:
+          $ref: '#/components/schemas/EmergancyContact'
+      type: object
+      required:
+      - message
+      - data
+      title: EmergancyContactResponse
+    EmergancyNearest:
+      properties:
+        id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Id
+        police_unit:
+          type: string
+          title: Police Unit
+        police_district:
+          type: string
+          title: Police District
+        police_latitude:
+          type: number
+          title: Police Latitude
+        police_longitude:
+          type: number
+          title: Police Longitude
+        police_contact:
+          items:
+            type: string
+          type: array
+          title: Police Contact
+        distance_km:
+          type: number
+          title: Distance Km
+      type: object
+      required:
+      - police_unit
+      - police_district
+      - police_latitude
+      - police_longitude
+      - police_contact
+      - distance_km
+      title: EmergancyNearest
+    EventResponse:
+      properties:
+        event_name:
+          type: string
+          title: Event Name
+        date:
+          type: string
+          format: date
+          title: Date
+        time:
+          type: string
+          format: time
+          title: Time
+        venue:
+          type: string
+          title: Venue
+        event_lat:
+          type: number
+          title: Event Lat
+        event_lon:
+          type: number
+          title: Event Lon
+        description:
+          type: string
+          title: Description
+        post:
+          type: string
+          title: Post
+        event_image:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Event Image
+        event_video:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Event Video
+        email:
+          type: string
+          format: email
+          title: Email
+        id:
+          type: string
+          title: Id
+      type: object
+      required:
+      - event_name
+      - date
+      - time
+      - venue
+      - event_lat
+      - event_lon
+      - description
+      - post
+      - email
+      - id
+      title: EventResponse
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    ImageAnalysis:
+      properties:
+        location:
+          type: string
+          title: Location
+          description: The location identified in the image
+        district:
+          type: string
+          title: District
+          description: The district of the location
+        description:
+          type: string
+          title: Description
+          description: Historical and cultural value description
+      type: object
+      required:
+      - location
+      - district
+      - description
+      title: ImageAnalysis
+      description: Schema for analyzing an image.
+    UserCreate:
+      properties:
+        email:
+          type: string
+          format: email
+          title: Email
+        full_name:
+          type: string
+          title: Full Name
+        role:
+          type: string
+          enum:
+          - admin
+          - tourist
+          - service_provider
+          title: Role
+          default: tourist
+        password:
+          type: string
+          title: Password
+      type: object
+      required:
+      - email
+      - full_name
+      - password
+      title: UserCreate
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+  securitySchemes:
+    HTTPBearer:
+      type: http
+      scheme: bearer
