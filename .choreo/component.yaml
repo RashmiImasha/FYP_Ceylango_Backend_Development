@@ -1,6 +1,6 @@
 schemaVersion: "1.2"
 endpoints:
-    - name: FYP
+    - name: fyp
       displayName: FYP Backend
       service:
         basePath: /
