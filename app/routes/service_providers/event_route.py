@@ -117,7 +117,7 @@ def get_all_Event():
 
     return result
 
-# get all events without expired data
+# get all upcoming events
 @router.get("/", response_model=list[EventResponse])
 def get_upcoming_event():
 
