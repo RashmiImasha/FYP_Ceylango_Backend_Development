@@ -1,7 +1,7 @@
 Cython
 setuptools
 wheel
-PyYAML==5.4.1
+PyYAML>=6.0.1
 
 # Web Framework
 fastapi==0.110.0
