@@ -99,8 +99,4 @@ def update_file_in_storage(
         data["event_video"] = None
     
     return data
-
-
-        
-                       
-
+                     

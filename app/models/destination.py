@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict
-from typing import Optional
+from typing import Optional, List
 
 class Destination(BaseModel):
     destination_name: str
@@ -7,9 +7,9 @@ class Destination(BaseModel):
     longitude: float
     district_name: str
     description: str 
-    destination_image: str
+    destination_image: List[str]
     category_name: str
-    image_phash: Optional[str] = None
+    image_phash: List[str] = None
     district_name_lower: Optional[str] = None
     
 class DestinationOut(Destination):
