@@ -1,14 +1,13 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from firebase_admin import storage
 import uuid
-from app.database.connection import db
-from app.models.category import Category, CategoryOut
+from app.database.connection import category_collection
+from app.models.category import CategoryOut
 from typing import Optional
 from urllib.parse import urlparse
 
 # create router for category routes
 router = APIRouter()
-collection = db.collection('category') # firestore collection name
 
 # add category
 @router.post("/", response_model=CategoryOut)
@@ -19,12 +18,12 @@ def create_category(
     category_image: UploadFile = File(...)
 ):
     # Check if category name already exists
-    existing_category = collection.where('category_name', '==', category_name).get()
+    existing_category = category_collection.where('category_name', '==', category_name).get()
     if existing_category:
         raise HTTPException(status_code=400, detail="This Category name already exists...!")
     
     # check if category_id already exists
-    existing_category_id = collection.document(category_id).get()
+    existing_category_id = category_collection.document(category_id).get()
     if existing_category_id.exists:
         raise HTTPException(status_code=400, detail="This Category ID already exists...!")  
     
@@ -44,14 +43,14 @@ def create_category(
         "category_image": image_url
     }
     
-    doc_ref = collection.document(category_id)
+    doc_ref = category_collection.document(category_id)
     doc_ref.set(category_data)
-    return {"message": "Category added successfully", "category_id": category_id, **category_data}
+    return {"message": "Category added successfully...!", "category_id": category_id, **category_data}
 
 # delete category
 @router.delete("/{category_id}", response_model=dict)
 def delete_category(category_id: str):
-    doc_ref = collection.document(category_id)
+    doc_ref = category_collection.document(category_id)
     if not doc_ref.get().exists:
         raise HTTPException(status_code=404, detail="Category is not found")
     
@@ -86,14 +85,14 @@ def update_category(
     category_image: Optional[UploadFile] = File(None)
     ):
 
-    doc_ref = collection.document(category_id)
+    doc_ref = category_collection.document(category_id)
     current_category = doc_ref.get()
 
     if not current_category.exists:
         raise HTTPException(status_code=404, detail="Category is not found")
     
     # Check if new category name already exists
-    existing_category = collection.where('category_name', '==', category_name).get()
+    existing_category = category_collection.where('category_name', '==', category_name).get()
     if existing_category and existing_category[0].id != category_id:
         raise HTTPException(status_code=400, detail="This Category already exists...!")
     
@@ -134,7 +133,7 @@ def update_category(
 # get all categories
 @router.get("/", response_model=list[CategoryOut])
 def get_all_categories():
-    docs = collection.stream()
+    docs = category_collection.stream()
     categories = []
 
     for doc in docs:
@@ -147,7 +146,7 @@ def get_all_categories():
 # get category by id
 @router.get("/{category_id}", response_model=CategoryOut)
 def get_category_by_id(category_id: str):
-    doc_ref = collection.document(category_id)
+    doc_ref = category_collection.document(category_id)
     category = doc_ref.get()
 
     if not category.exists:
@@ -160,7 +159,7 @@ def get_category_by_id(category_id: str):
 # get categories by type
 @router.get("/type/{category_type}", response_model=list[CategoryOut])
 def get_categories_by_type(category_type: str):
-    docs = collection.where('category_type', '==', category_type).stream()
+    docs = category_collection.where('category_type', '==', category_type).stream()
     categories = []
 
     for doc in docs:

@@ -2,17 +2,14 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
 from app.models.destination import DestinationOut, DestinationNearBy
 from app.utils.crud_utils import get_all, get_by_id, delete_by_id
 from app.utils.destinationUtils import haversine, compute_phash, add_destination_record, update_destination_record
-from app.utils.storage_handle import upload_file_to_storage, delete_file_from_storage
 from firebase_admin import storage
-from app.database.connection import db
+from app.database.connection import destination_collection
 from typing import Optional, List
 import imagehash
 from urllib.parse import urlparse
 
 # create router for destination routes
 router = APIRouter()
-destination_collection = db.collection('destination')
-category_collection = db.collection('category')
 
 # add destination
 @router.post("/", response_model=DestinationOut)
@@ -54,102 +51,131 @@ def update_destination(
     description: str = Form(...),
     category_name: str = Form(...),
     new_images: Optional[List[UploadFile]] = File(None),
-    remove_existing: Optional[List[str]] = Form(None)  # send URLs of images to remove
+    remove_existing: Optional[List[str]] = Form(None)
 ):
     doc_ref = destination_collection.document(destination_id)
-    destination = doc_ref.get()
-    if not destination.exists:
-        raise HTTPException(status_code=404, detail="Destination not found")
+    return update_destination_record(
+        doc_ref=doc_ref,
+        destination_id=destination_id,
+        collection=destination_collection,   # 🔹 pass destination collection
+        destination_name=destination_name,
+        latitude=latitude,
+        longitude=longitude,
+        district_name=district_name,
+        description=description,
+        category_name=category_name,
+        new_images=new_images,
+        remove_existing=remove_existing
+    )
 
-    current_data = destination.to_dict()
-    current_data["id"] = destination_id
+# def update_destination(
+#     destination_id: str,
+#     destination_name: str = Form(...),
+#     latitude: float = Form(...),
+#     longitude: float = Form(...),
+#     district_name: str = Form(...),
+#     description: str = Form(...),
+#     category_name: str = Form(...),
+#     new_images: Optional[List[UploadFile]] = File(None),
+#     remove_existing: Optional[List[str]] = Form(None)  # send URLs of images to remove
+# ):
+#     doc_ref = destination_collection.document(destination_id)
+#     destination = doc_ref.get()
+#     if not destination.exists:
+#         raise HTTPException(status_code=404, detail="Destination not found")
 
-    # Validate category
-    category_query = category_collection.where('category_name', '==', category_name).where('category_type', '==', 'location').get()
-    if not category_query:
-        raise HTTPException(status_code=404, detail="Valid location category not found")
+#     current_data = destination.to_dict()
+#     current_data["id"] = destination_id
 
-    # Check duplicate destination name
-    existing_destination = destination_collection.where('destination_name', '==', destination_name).stream()
-    for doc in existing_destination:
-        if doc.id != destination_id:
-            raise HTTPException(status_code=400, detail="This Destination name already exists...!")
+#     # Validate category
+#     category_query = category_collection.where('category_name', '==', category_name).where('category_type', '==', 'location').get()
+#     if not category_query:
+#         raise HTTPException(status_code=404, detail="Valid location category not found")
 
-    # Check nearby destinations
-    for doc in destination_collection.stream():
-        if doc.id == destination_id:
-            continue
-        data = doc.to_dict()
-        if data.get("latitude") is not None and data.get("longitude") is not None:
-            distance = haversine(latitude, longitude, data["latitude"], data["longitude"])
-            if distance < 5:
-                raise HTTPException(status_code=400, detail="Another destination is too close to this location")
+#     # Check duplicate destination name
+#     existing_destination = destination_collection.where('destination_name', '==', destination_name).stream()
+#     for doc in existing_destination:
+#         if doc.id != destination_id:
+#             raise HTTPException(status_code=400, detail="This Destination name already exists...!")
+
+#     # Check nearby destinations
+#     for doc in destination_collection.stream():
+#         if doc.id == destination_id:
+#             continue
+#         data = doc.to_dict()
+#         if data.get("latitude") is not None and data.get("longitude") is not None:
+#             distance = haversine(latitude, longitude, data["latitude"], data["longitude"])
+#             if distance < 5:
+#                 raise HTTPException(status_code=400, detail="Another destination is too close to this location")
 
     
-    current_images = current_data.get("destination_image", []) or []
-    current_phash = current_data.get("image_phash", []) or []
+#     current_images = current_data.get("destination_image", []) or []
+#     current_phash = current_data.get("image_phash", []) or []
 
-    # Remove selected images
-    if remove_existing:
-        for url in remove_existing:
-            if url in current_images:
-                idx = current_images.index(url)
-                current_images.pop(idx)
-                current_phash.pop(idx)
-                delete_file_from_storage({"destination_image": [url]}, {"destination_image": "destination_images"})
+#     # Remove selected images
+#     if remove_existing:
+#         for url in remove_existing:
+#             if url in current_images:
+#                 idx = current_images.index(url)
+#                 current_images.pop(idx)
+#                 current_phash.pop(idx)
+#                 delete_file_from_storage({"destination_image": [url]}, {"destination_image": "destination_images"})
 
-    # Add new images
-    if new_images:
-        allowed_types = ["image/jpeg", "image/jpg", "image/png"]
-        existing_phash_lists = [
-            doc.to_dict().get("image_phash", []) for doc in destination_collection.stream() if doc.id != destination_id
-        ]
+#     # Add new images
+#     if new_images:
+#         allowed_types = ["image/jpeg", "image/jpg", "image/png"]
+#         existing_phash_lists = [
+#             doc.to_dict().get("image_phash", []) for doc in destination_collection.stream() if doc.id != destination_id
+#         ]
 
-        current_phash_set = set(current_phash)
+#         current_phash_set = set(current_phash)
 
-        for img in new_images:
-            if img.content_type not in allowed_types:
-                raise HTTPException(status_code=400, detail="Unsupported image file type")
-            img.file.seek(0)
-            phash = compute_phash(img.file)
+#         for img in new_images:
+#             if img.content_type not in allowed_types:
+#                 raise HTTPException(status_code=400, detail="Unsupported image file type")
+#             img.file.seek(0)
+#             phash = compute_phash(img.file)
 
-            if phash in current_phash_set:
-                raise HTTPException(status_code=400, detail="This image already exists in this Image List...!")
+#             if phash in current_phash_set:
+#                 raise HTTPException(status_code=400, detail="This image already exists in this Image List...!")
             
-            # Check similarity
-            for phash_list in existing_phash_lists:
-                for existing_phash in phash_list:
-                    if imagehash.hex_to_hash(existing_phash) - imagehash.hex_to_hash(phash) <= 5:
-                        raise HTTPException(status_code=400, detail="A visually similar image already exists.")
-            url = upload_file_to_storage(img, "destination_images")
-            if url:
-                current_images.append(url)
-                current_phash.append(phash)
-                current_phash_set.add(phash)
+#             # Check similarity
+#             for phash_list in existing_phash_lists:
+#                 for existing_phash in phash_list:
+#                     if imagehash.hex_to_hash(existing_phash) - imagehash.hex_to_hash(phash) <= 5:
+#                         raise HTTPException(status_code=400, detail="A visually similar image already exists.")
+#             url = upload_file_to_storage(img, "destination_images")
+#             if url:
+#                 current_images.append(url)
+#                 current_phash.append(phash)
+#                 current_phash_set.add(phash)
 
-    if len(current_images) == 0:
-        raise HTTPException(status_code=400, detail="At least one image must remain")
+#     if len(current_images) == 0:
+#         raise HTTPException(status_code=400, detail="At least one image must remain")
 
-    # Update other fields
-    current_data.update({
-        "destination_name": destination_name.strip(),
-        "latitude": latitude,
-        "longitude": longitude,
-        "district_name": district_name.strip(),
-        "district_name_lower": district_name.strip().lower(),
-        "description": description,
-        "category_name": category_name.strip(),
-        "destination_image": current_images,
-        "image_phash": current_phash
-    })
+#     # Update other fields
+#     current_data.update({
+#         "destination_name": destination_name.strip(),
+#         "latitude": latitude,
+#         "longitude": longitude,
+#         "district_name": district_name.strip(),
+#         "district_name_lower": district_name.strip().lower(),
+#         "description": description,
+#         "category_name": category_name.strip(),
+#         "destination_image": current_images,
+#         "image_phash": current_phash
+#     })
 
-    doc_ref.set(current_data, merge=False)
-    return {"id": destination_id, **current_data}
+#     doc_ref.set(current_data, merge=False)
+#     return {"id": destination_id, **current_data}
     
 # delete destination
 @router.delete("/{destination_id}")
 def delete_destination(destination_id: str):
-    return delete_by_id(destination_collection, destination_id)
+    files_mapping = {
+        "destination_image": "destination_images",
+    }
+    return delete_by_id(destination_collection, destination_id, files_mapping)
 
 # get all destinations
 @router.get("/")

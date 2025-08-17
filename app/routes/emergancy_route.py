@@ -1,11 +1,10 @@
 from fastapi import APIRouter, HTTPException, status, Query
 from app.models.emergancy import EmergancyContact, EmergancyContactResponse, EmergancyNearest
-from app.database.connection import db
+from app.database.connection import emergancy_collection
 from app.utils.destinationUtils import haversine
-from typing import Union, List
+from typing import Union
 
 router = APIRouter()
-emergancy_collection = db.collection("emergancyContact")
 
 max_distance_km = 50
 

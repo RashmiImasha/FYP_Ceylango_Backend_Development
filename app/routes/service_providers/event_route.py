@@ -1,13 +1,12 @@
 from fastapi import APIRouter, HTTPException, UploadFile, status, Form, File
 from app.models.service_providers.events import EventResponse
 from app.utils.storage_handle import upload_file_to_storage, delete_file_from_storage, update_file_in_storage
-from app.database.connection import db
+from app.database.connection import event_collection
 from typing import List, Optional
 from pydantic import EmailStr
 from datetime import date as DateType, time as TimeType
 
 router = APIRouter()
-event_collection = db.collection("events")
 
 # add event
 @router.post("/", response_model=EventResponse)

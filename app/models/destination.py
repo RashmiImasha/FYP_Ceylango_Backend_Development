@@ -21,3 +21,11 @@ class DestinationOut(Destination):
 
 class DestinationNearBy(DestinationOut):
     distance: float # in km
+    
+
+class MissingPlaceOut(Destination):
+    id: str
+
+    model_config = ConfigDict(
+        exclude={'image_phash', 'district_name_lower'}
+    )

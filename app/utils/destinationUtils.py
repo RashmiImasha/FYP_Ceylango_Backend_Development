@@ -1,13 +1,9 @@
 from fastapi import HTTPException, UploadFile
-from app.database.connection import db
-# from app.routes.destination_route import destination_collection, category_collection
+from app.database.connection import category_collection, destination_collection
 from app.utils.storage_handle import upload_file_to_storage, delete_file_from_storage
 from PIL import Image
 import imagehash, math
 from typing import List, Optional
-
-destination_collection = db.collection('destination_check')
-category_collection = db.collection('category')
 
 def haversine(lat1, lon1, lat2, lon2):
     # calculate distance between two points on the Earth ( Radius )
@@ -35,11 +31,6 @@ def compute_phash(upload_file) -> str:
     
     phash = imagehash.phash(image, hash_size=8)
     return str(phash)
-
-# def compute_phash(upload_file) -> str:
-#     image = Image.open(upload_file)
-#     phash = imagehash.phash(image)
-#     return str(phash)
 
 def add_destination_record(destination_data: dict, images=None):
     """
@@ -126,7 +117,7 @@ def add_destination_record(destination_data: dict, images=None):
 def update_destination_record(
     doc_ref,
     destination_id: str,
-    collection,  # pass either destination_collection or misplace_collection
+    collection,  
     destination_name: str,
     latitude: float,
     longitude: float,

@@ -12,4 +12,11 @@ if not firebase_admin._apps:
 # Initialize Firestore DB
 db = firestore.client()
 
+# collections
+user_collection = db.collection("users")
+category_collection = db.collection('category')
+destination_collection = db.collection('destination')
+emergancy_collection = db.collection("emergancyContact")
+misplace_collection = db.collection('missingPlace')
 
+event_collection = db.collection("events")

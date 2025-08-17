@@ -1,16 +1,15 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from firebase_admin import storage
-from app.routes.destination_route import destination_collection
-from app.routes.category_route import collection
-from app.database.connection import db
+from app.database.connection import destination_collection, misplace_collection
 from app.utils.google_analyzer import analyze_image_withAI, ImageAnalysis
-from app.utils.destinationUtils import haversine, compute_phash, add_destination_record
+from app.utils.destinationUtils import haversine, compute_phash, add_destination_record, update_destination_record
+from app.utils.storage_handle import delete_file_from_storage, move_files_to_new_folder
 import base64, uuid, io, imagehash
 from app.utils.crud_utils import get_all, get_by_id, delete_by_id
-
+from app.models.destination import MissingPlaceOut
+from typing import Optional, List
 
 router = APIRouter()
-misplace_collection = db.collection('missingPlace')
 
 @router.post("/uploadImage", response_model=ImageAnalysis)
 async def analyze_image(file: UploadFile = File(...)):
@@ -39,12 +38,7 @@ async def snap_image_analyze(
     latitude: float = Form(...),
     longitude: float = Form(...),
     destination_image: UploadFile = File(...),  
-):
-    # validate image type
-    # allowed_types = ["image/jpeg", "image/png"]
-    # if destination_image.content_type not in allowed_types:
-    #     raise HTTPException(status_code=400, detail="Invalid image type. Only JPEG and PNG are allowed.")
-    
+):    
     # read and encode image
     image_bytes = await destination_image.read()
     encoded_image = base64.b64encode(image_bytes).decode('utf-8')
@@ -61,6 +55,7 @@ async def snap_image_analyze(
                 nearby_destinations.append(data)
     
     # if nearby loc found, check for similar images
+    assumed_district = "Unknown"
     if nearby_destinations:
         for dest in nearby_destinations:
             for existing_phash in dest.get("image_phash", []):
@@ -113,7 +108,7 @@ async def snap_image_analyze(
         bucket = storage.bucket()
         image_id = str(uuid.uuid4())
         blob = bucket.blob(f'missingplace_images/{image_id}_{destination_image.filename}')
-        blob.upload_from_string(image_bytes)
+        blob.upload_from_string(image_bytes, content_type=destination_image.content_type)
         blob.make_public()
         destination_data["destination_image"].append(blob.public_url)
 
@@ -123,7 +118,7 @@ async def snap_image_analyze(
             "destination_name": destination_data["destination_name"],
             "district_name": destination_data["district_name"],
             "description": destination_data["description"],
-            "status": "Saved in missingplace (nearby but not matched)"
+            # "status": "Saved in missingplace collection"
         }
     
     else:
@@ -144,7 +139,7 @@ async def snap_image_analyze(
             "1. The exact name of the place (landmark or natural location).\n"
             "2. The district or local area name.\n"
             "3. The type of place. Choose ONLY ONE from: Beach, Waterfalls, Mountains, Historical, Sacred, Rainforests, Gardens.\n"
-            "4. A brief but informative historical and cultural description.\n\n"
+            "4. A brief but informative historical and cultural description. ( 4 sentences)\n\n"
             " Be extremely accurate and give the answer *only* if the image and coordinates clearly match a known location."
         )
 
@@ -178,7 +173,7 @@ async def snap_image_analyze(
         "destination_name": destination_data["destination_name"],
         "district_name": destination_data["district_name"],
         "description": destination_data["description"],
-        "status": "Saved in missingplace"
+        # "status": "Saved in missingplace"
         }
 
     # destination_name = result.destination_name
@@ -265,9 +260,21 @@ def move_missing_to_destination(missingplace_id: str):
     data = doc.to_dict()
 
     try:
+        if "destination_image" in data and data["destination_image"]:
+            new_image_urls = move_files_to_new_folder(
+                urls=data["destination_image"],
+                source_folder="missingplace_images",
+                target_folder="destination_images"
+            )
+            data["destination_image"] = new_image_urls
+
         record = add_destination_record(data, images=None)  # images=None → use existing image URLs + phash
+        # files_mapping = {"destination_image": "missingplace_images"}  # adjust field and folder name
+        # delete_file_from_storage(data, files_mapping)
+        
         doc_ref.delete()
         return {"message": "Moved to destination successfully", "destination_id": record["id"]}
+    
     except Exception as e:
         return {"message": "Failed to move to destination", "error": str(e)}
 
@@ -281,8 +288,37 @@ def get_all_missing():
 
 @router.delete("/{missing_id}")
 def delete_missing(missing_id: str):
-    return delete_by_id(misplace_collection, missing_id)
+    files_mapping = {
+        "destination_image": "missingplace_images",
+    }
+    return delete_by_id(misplace_collection, missing_id, files_mapping)
 
+@router.put("/{missing_id}", response_model=MissingPlaceOut)
+def update_misplace(
+    misplace_id: str,
+    destination_name: str = Form(...),
+    latitude: float = Form(...),
+    longitude: float = Form(...),
+    district_name: str = Form(...),
+    description: str = Form(...),
+    category_name: str = Form(...),
+    new_images: Optional[List[UploadFile]] = File(None),
+    remove_existing: Optional[List[str]] = Form(None)
+):
+    doc_ref = misplace_collection.document(misplace_id)
+    return update_destination_record(
+        doc_ref=doc_ref,
+        destination_id=misplace_id,
+        collection=misplace_collection,   
+        destination_name=destination_name,
+        latitude=latitude,
+        longitude=longitude,
+        district_name=district_name,
+        description=description,
+        category_name=category_name,
+        new_images=new_images,
+        remove_existing=remove_existing
+    )
 
 
 

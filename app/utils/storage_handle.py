@@ -2,6 +2,7 @@ import uuid
 from firebase_admin import storage
 from fastapi import UploadFile
 from typing import Optional, List
+from urllib.parse import urlparse, unquote
 
 def upload_file_to_storage(file: Optional[UploadFile], folder:str) -> Optional[str]:
     """
@@ -40,11 +41,23 @@ def delete_file_from_storage(data:dict, files_mapping: dict) -> dict:
         if field in data and data[field]:
             urls = data[field] if isinstance(data[field], list) else [data[field]]
             for url in urls:
-                file_name = url.split('/')[-1]
-                blob = bucket.blob(f"{folder}/{file_name}")
+                path = urlparse(url).path  
+                parts = path.split("/")
+                bucket_name = parts[1]
+                file_path = "/".join(path.split("/")[2:])  
+                file_path = unquote(file_path) 
+
+                bucket = storage.bucket(bucket_name)  # use correct bucket
+                blob = bucket.blob(file_path)
+                
                 if blob.exists():
                     blob.delete()
-                    deleted.append(file_name)
+                    deleted.append(file_path)
+
+        if deleted:
+            print(f"Deleted files from {field}: {deleted}")
+        else:
+            print(f"No files found to delete in {field}")
 
         deleted_status[field] = f"Deleted: {deleted}" if deleted else "No file found or already deleted"
     
@@ -100,3 +113,31 @@ def update_file_in_storage(
     
     return data
                      
+def move_files_to_new_folder(urls: list, source_folder: str, target_folder: str) -> list:
+    bucket = storage.bucket()
+    new_urls = []
+
+    for url in urls:
+        path = urlparse(url).path
+        file_name = "/".join(path.split("/")[2:])  
+        file_name = unquote(file_name)
+
+        # Download the blob content
+        blob = bucket.blob(file_name)
+        if not blob.exists():
+            continue
+
+        # Create a new blob in the destination folder
+        new_blob_name = f"{target_folder}/{file_name.split('/')[-1]}"
+        new_blob = bucket.blob(new_blob_name)
+        new_blob.rewrite(blob)  # copy content to new blob
+        new_blob.make_public()
+
+        new_urls.append(new_blob.public_url)
+        print(f"Moved {file_name} → {new_blob_name}")
+
+        # Delete original blob
+        blob.delete()
+        print(f"Deleted original image: {file_name}")
+
+    return new_urls

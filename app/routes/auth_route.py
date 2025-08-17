@@ -1,12 +1,11 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from firebase_admin import auth
-from app.database.connection import db
+from app.database.connection import db, user_collection
 from app.models.user import UserCreate, UserLogin, UserInDB
 from firebase_admin import exceptions as firebase_exceptions
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 router = APIRouter()
-collection = db.collection("users")
 security = HTTPBearer()
 
 @router.post("/signup")
@@ -28,7 +27,7 @@ async def signup(user: UserCreate):
             "disabled": False,
         }
 
-        collection.document(user_record.uid).set(user_data)
+        user_collection.document(user_record.uid).set(user_data)
 
         return {
             "message": "User created successfully",
@@ -55,7 +54,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 async def get_profile(user_data: dict = Depends(get_current_user)):
     try:
         # Get additional user data from Firestore
-        user_doc = collection.document(user_data['uid']).get()
+        user_doc = user_collection.document(user_data['uid']).get()
         if not user_doc.exists:
             raise HTTPException(status_code=404, detail="User not found")
         
