@@ -103,6 +103,25 @@ def get_event_byId(event_id: str):
     event_data["id"] = event.id
     return event_data
 
+# get by email
+@router.get("event/byEmail", response_model=List[EventResponse])
+def get_by_email(email: str):
+    events = (event_collection.where("email", "==", email).get())  
+
+    if not events:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No events found for this email"
+        )
+    
+    event_list = []
+    for event in events:
+        event_data = event.to_dict()
+        event_data["id"] = event.id
+        event_list.append(event_data)
+
+    return event_list
+
 # get all events
 @router.get("/event/all", response_model=list[EventResponse])
 def get_all_Event():

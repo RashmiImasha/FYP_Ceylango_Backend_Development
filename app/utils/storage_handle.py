@@ -10,7 +10,6 @@ def upload_file_to_storage(file: Optional[UploadFile], folder:str) -> Optional[s
     Returns None if no file is provided.
 
     """
-
     if not file:
         return None
     
