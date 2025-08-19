@@ -11,18 +11,17 @@ class ImageAnalysis(BaseModel):
     """
     location: str = Field(..., description="The location identified in the image")
     district: str = Field(..., description="The district of the location")
-    description: str = Field(..., description="Historical and cultural value description")
-
+    description: str = Field(..., description="Historical and cultural value description")  
 
 class CategoryEnum(str, Enum):
     Beach = "Beach"
     Waterfalls = "Waterfalls"
     Mountains = "Mountains"
     Historical = "Historical"
-    Sacred = "Sacred"
-    Rainforests = "Rainforests"
-    Gardens = "Gardens"
-    Unknown = "Unknown"
+    Religious = "Religious"
+    Adventure = "Adventure"
+    Wildlife = "Wildlife"
+    Others = "Others"
 
 class DestinationAnalysis(BaseModel):
     destination_name: str = Field(..., description="Name of the destination")

@@ -83,7 +83,7 @@ async def snap_image_analyze(
                 "If confident, return:\n"
                 "- destination_name\n"
                 "- district_name\n"
-                "- type (Beach, Waterfalls, Mountains, Historical, Sacred, Rainforests, Gardens)\n"
+                "- type (Beach, Mountains, Historical, Religious, Adventure, Wildlife)\n"
                 "- description\n\n"
                 "If you cannot match it even with the district context, return Unknown fields."
             )
@@ -138,8 +138,8 @@ async def snap_image_analyze(
             "If the image and coordinates clearly indicate a known place, respond with:\n"
             "1. The exact name of the place (landmark or natural location).\n"
             "2. The district or local area name.\n"
-            "3. The type of place. Choose ONLY ONE from: Beach, Waterfalls, Mountains, Historical, Sacred, Rainforests, Gardens.\n"
-            "4. A brief but informative historical and cultural description. ( 4 sentences)\n\n"
+            "3. The type of place. Choose ONLY ONE from: Beach, Mountains, Historical, Religious, Adventure, Wildlife\n"
+            "4. A informative historical and cultural description.\n\n"
             " Be extremely accurate and give the answer *only* if the image and coordinates clearly match a known location."
         )
 
