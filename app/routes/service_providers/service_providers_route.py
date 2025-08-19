@@ -2,28 +2,43 @@ from typing import Optional
 from typing_extensions import Literal
 from fastapi import APIRouter, HTTPException, status, Depends
 from firebase_admin import auth
+from app.config.settings import settings
 from app.database.connection import db
-from app.models.user import ServiceProviderApplication,  UserCreate, UserLogin, UserInDB
+from app.models.user import ServiceProviderApplication
 from firebase_admin import exceptions as firebase_exceptions
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-import secrets
 import smtplib
 from email.mime.text import MIMEText
+
 
 router = APIRouter()
 collection = db.collection("users")
 security = HTTPBearer()
 
-   
+
 @router.post("/apply")
 async def apply_service_provider(user: ServiceProviderApplication):
     try:
-        user_data = user.dict()
-        user_data["role"] = "service_provider"
-        user_data["status"] = "Pending"
+        # ✅ Check if email already used in applications
+        existing = collection.where("email", "==", user.email).stream()
+        if any(existing):
+            raise HTTPException(status_code=400, detail="Email already used in an application")
 
+        # Create user in Firestore
         doc_ref = collection.document()
-        user_data["application_id"] = doc_ref.id
+        user_data = {
+            "application_id": doc_ref.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": "service_provider",
+            "disabled": False,
+            "status": "Pending",
+            "service_name": user.service_name,
+            "district": user.district,
+            "service_category": user.service_category,
+            "phone_number": user.phone_number
+        }
+
         doc_ref.set(user_data)
 
         return {
@@ -48,23 +63,30 @@ async def review_service_provider(application_id: str, decision: Literal["Approv
         user_data = user_doc.to_dict()
 
         if decision == "Approved":
-            # Generate random password
-            generated_password = secrets.token_urlsafe(8)  # e.g., "aB3kd82L"
-            
-            # Create user in Firebase Auth
-            user_record = auth.create_user(
-                email=user_data["email"],
-                password=generated_password,
-                display_name=user_data["full_name"]
-            )
+            # ✅ Create user in Firebase Auth (if not already exists)
+            try:
+                user_record = auth.get_user_by_email(user_data["email"])
+            except firebase_exceptions.NotFoundError:
+                user_record = auth.create_user(
+                    email=user_data["email"],
+                    display_name=user_data["full_name"]
+                )
 
-            # Update Firestore with approved status + UID
-            doc_ref.update({
+            # ✅ Generate password reset link instead of sending plain password
+            reset_link = auth.generate_password_reset_link(user_data["email"])
+
+            new_doc_ref = collection.document(user_record.uid)
+            user_data.update({
                 "status": "Approved",
                 "uid": user_record.uid,
+                "role": "service_provider"
             })
+            new_doc_ref.set(user_data)
 
-            # Send email with login credentials
+            # Delete old document
+            doc_ref.delete()
+
+            # Send approval email
             send_email(
                 to_email=user_data["email"],
                 subject="Service Provider Application Approved",
@@ -72,12 +94,9 @@ async def review_service_provider(application_id: str, decision: Literal["Approv
                 Hi {user_data['full_name']},
 
                 Your application as a service provider has been approved. 
-                You can now log in to your dashboard.
+                Please set your password and login using the link below:
 
-                Email: {user_data['email']}
-                Password: {generated_password}
-
-                Please change your password after login.
+                {reset_link}
 
                 Regards,
                 Tourist App Team
@@ -87,7 +106,7 @@ async def review_service_provider(application_id: str, decision: Literal["Approv
             return {"message": "Service provider approved and account created", "uid": user_record.uid}
 
         else:  # Rejected
-            doc_ref.update({"status": "Rejected"})
+            doc_ref.delete()
 
             # Send rejection email
             send_email(
@@ -110,22 +129,30 @@ async def review_service_provider(application_id: str, decision: Literal["Approv
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
 def send_email(to_email: str, subject: str, body: str):
-    """ Example SMTP Email Sender (you can replace with SendGrid, AWS SES, etc.) """
+    """ Safer SMTP Email Sender using env vars """
     smtp_server = "smtp.gmail.com"
     smtp_port = 587
-    sender_email = "subanyakalpani46@gmail.com"
-    sender_password = "yzei nzag osrk rdvb"
+    sender_email = settings.SMTP_EMAIL
+    sender_password = settings.SMTP_PASS
 
-    msg = MIMEText(body)
-    msg["Subject"] = subject
-    msg["From"] = sender_email
-    msg["To"] = to_email
+    if not sender_email or not sender_password:
+        raise Exception("SMTP credentials not configured")
 
-    with smtplib.SMTP(smtp_server, smtp_port) as server:
-        server.starttls()
-        server.login(sender_email, sender_password)
-        server.sendmail(sender_email, to_email, msg.as_string())
+    try:
+        msg = MIMEText(body)
+        msg["Subject"] = subject
+        msg["From"] = sender_email
+        msg["To"] = to_email
+
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, to_email, msg.as_string())
+    except Exception as e:
+        print(f"❌ Email sending failed: {e}")  # log error but don't block approval
+
 
 @router.get("/")
 async def get_all_service_providers(status: Optional[str] = None):
@@ -134,9 +161,8 @@ async def get_all_service_providers(status: Optional[str] = None):
     Optional query param ?status=Approved or ?status=Pending
     """
     try:
-        query = collection.where("role", "==", "service_provider")
-        
-        # If status filter provided
+        query = collection.where("role", "in", ["service_provider", "pending_service_provider"])
+
         if status:
             query = query.where("status", "==", status)
 
@@ -146,7 +172,7 @@ async def get_all_service_providers(status: Optional[str] = None):
         for doc in docs:
             data = doc.to_dict()
             providers.append({
-                "application_id": data.get("application_id", doc.id),
+                "application_id": doc.id,
                 "uid": data.get("uid"),
                 "email": data.get("email"),
                 "full_name": data.get("full_name"),
@@ -155,6 +181,7 @@ async def get_all_service_providers(status: Optional[str] = None):
                 "service_category": data.get("service_category"),
                 "phone_number": data.get("phone_number"),
                 "status": data.get("status", "Pending"),
+                "role": data.get("role")
             })
 
         return {"count": len(providers), "service_providers": providers}
