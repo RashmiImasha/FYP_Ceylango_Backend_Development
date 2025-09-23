@@ -16,8 +16,6 @@ class ServiceProviderApplication(BaseModel):
     district: str
     service_category: str
     phone_number: str
-    
-
 
 class UserLogin(BaseModel):
     email: EmailStr

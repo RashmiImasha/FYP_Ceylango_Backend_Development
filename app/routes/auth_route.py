@@ -49,7 +49,6 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
 @router.get("/login")
 async def get_profile(user_data: dict = Depends(get_current_user)):
     try:
@@ -59,11 +58,31 @@ async def get_profile(user_data: dict = Depends(get_current_user)):
             raise HTTPException(status_code=404, detail="User not found")
         
         user_data = user_doc.to_dict()
-        return {
+        
+        # Build response with optional fields for service providers
+        response = {
             "uid": user_data["uid"],
             "email": user_data["email"],
             "full_name": user_data["full_name"],
             "role": user_data.get("role", "tourist")
         }
+        
+        if "service_category" in user_data:
+            response["serviceCategory"] = user_data["service_category"]
+        
+        if "service_name" in user_data:
+            response["serviceName"] = user_data["service_name"]
+            
+        if "district" in user_data:
+            response["district"] = user_data["district"]
+            
+        if "status" in user_data:
+            response["status"] = user_data["status"]
+            
+        if "phone_number" in user_data:
+            response["phone_number"] = user_data["phone_number"]
+        
+        return response
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
