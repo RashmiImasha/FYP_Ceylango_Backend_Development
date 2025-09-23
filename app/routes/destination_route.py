@@ -7,6 +7,9 @@ from app.database.connection import destination_collection
 from typing import Optional, List
 import imagehash
 from urllib.parse import urlparse
+import requests
+
+OSRM_BASE_URL = "http://router.project-osrm.org"
 
 # create router for destination routes
 router = APIRouter()
@@ -37,7 +40,7 @@ def create_destination(
 
 # get destinations by id
 @router.get("/{destination_id}")
-def get_destination_byId(destination_id: str):    
+def get_destination_byId(destination_id: str):
     return get_by_id(destination_collection, destination_id)
 
 # update destination by id
@@ -201,45 +204,103 @@ def get_destination_byDistrict(district_name: str):
 
     return result
 
-# get nearby destination ( default : 10km )
-@router.get("/near/nearby", response_model=list[DestinationNearBy])
+
+
+def get_osrm_distance(lat1, lon1, lat2, lon2):
+    """Get road distance in meters between two points using OSRM API"""
+    url = f"{OSRM_BASE_URL}/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+
+        if "routes" in data and len(data["routes"]) > 0:
+            return data["routes"][0]["distance"], data["routes"][0]["duration"]
+        else:
+            return None, None
+    except Exception as e:
+        print(f"OSRM error: {e}")
+        return None, None
+
+
+@router.get("/near/nearby", response_model=list[dict])
 def get_nearBy(
     latitude: float = Query(..., description="User's current latitude"),
     longitude: float = Query(..., description="User's current longitude"),
-    radius_range: float = 10 # in km
+    radius_range: float = 10  # in km
 ):
-    # print("get_nearBy route called")
-
     destinations = destination_collection.stream()
     result = []
-
-    # print(f"User coords: {latitude}, {longitude}")
 
     for doc in destinations:
         data = doc.to_dict()
         dest_latitude = data.get("latitude")
         dest_longitude = data.get("longitude")
 
-        # # check values and types
-        # print(f"Destination: {data.get('destination_name')}")
-        # print(f"Latitude: {dest_latitude} (type: {type(dest_latitude)})")
-        # print(f"Longitude: {dest_longitude} (type: {type(dest_longitude)})")
-
         if dest_latitude is not None and dest_longitude is not None:
-            distance = haversine(latitude, longitude, dest_latitude, dest_longitude)
+            distance, duration = get_osrm_distance(latitude, longitude, dest_latitude, dest_longitude)
 
-            print(f"Checking destination: {data.get('destination_name')} "
-                  f"at {dest_latitude}, {dest_longitude}")
-            print(f"Distance: {distance/1000:.2f} km")
+            if distance is not None:
+                distance_km = distance / 1000  # convert meters to km
 
-            if distance <= radius_range*1000:
-                data["id"] = doc.id
-                data["distance"] = round(distance/1000, 2)
-                result.append(data)
-    
+                print(f"Destination: {data.get('destination_name')}, Distance: {distance_km:.2f} km")
+
+                if distance_km <= radius_range:
+                    data["id"] = doc.id
+                    data["distance"] = round(distance_km, 2)
+                    data["duration_minutes"] = round(duration / 60, 1) if duration else None
+                    result.append(data)
+
     result.sort(key=lambda x: x['distance'])  # sort by closest first
 
     if not result:
         raise HTTPException(status_code=404, detail=f"No destinations found within {radius_range} km.")
-    
+
     return result
+
+
+
+
+
+# # get nearby destination ( default : 10km )
+# @router.get("/near/nearby", response_model=list[DestinationNearBy])
+# def get_nearBy(
+#     latitude: float = Query(..., description="User's current latitude"),
+#     longitude: float = Query(..., description="User's current longitude"),
+#     radius_range: float = 10 # in km
+# ):
+#     # print("get_nearBy route called")
+
+#     destinations = destination_collection.stream()
+#     result = []
+
+#     # print(f"User coords: {latitude}, {longitude}")
+
+#     for doc in destinations:
+#         data = doc.to_dict()
+#         dest_latitude = data.get("latitude")
+#         dest_longitude = data.get("longitude")
+
+#         # # check values and types
+#         # print(f"Destination: {data.get('destination_name')}")
+#         # print(f"Latitude: {dest_latitude} (type: {type(dest_latitude)})")
+#         # print(f"Longitude: {dest_longitude} (type: {type(dest_longitude)})")
+
+#         if dest_latitude is not None and dest_longitude is not None:
+#             distance = haversine(latitude, longitude, dest_latitude, dest_longitude)
+
+#             print(f"Checking destination: {data.get('destination_name')} "
+#                   f"at {dest_latitude}, {dest_longitude}")
+#             print(f"Distance: {distance/1000:.2f} km")
+
+#             if distance <= radius_range*1000:
+#                 data["id"] = doc.id
+#                 data["distance"] = round(distance/1000, 2)
+#                 result.append(data)
+    
+#     result.sort(key=lambda x: x['distance'])  # sort by closest first
+
+#     if not result:
+#         raise HTTPException(status_code=404, detail=f"No destinations found within {radius_range} km.")
+    
+#     return result
