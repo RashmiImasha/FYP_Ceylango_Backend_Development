@@ -50,39 +50,41 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             headers={"WWW-Authenticate": "Bearer"},
         )
 @router.get("/login")
-async def get_profile(user_data: dict = Depends(get_current_user)):
+async def get_profile(current_user: dict = Depends(get_current_user)):
     try:
-        # Get additional user data from Firestore
-        user_doc = user_collection.document(user_data['uid']).get()
+        # Fetch user document from Firestore using UID from Firebase Auth
+        user_doc = user_collection.document(current_user['uid']).get()
         if not user_doc.exists:
             raise HTTPException(status_code=404, detail="User not found")
-        
+
         user_data = user_doc.to_dict()
-        
-        # Build response with optional fields for service providers
+
+        # Base response
         response = {
             "uid": user_data["uid"],
             "email": user_data["email"],
-            "full_name": user_data["full_name"],
-            "role": user_data.get("role", "tourist")
+            "full_name": user_data.get("full_name"),
+            "role": user_data.get("role", "tourist"),
+            "disabled": user_data.get("disabled", False),
         }
-        
-        if "service_category" in user_data:
-            response["serviceCategory"] = user_data["service_category"]
-        
-        if "service_name" in user_data:
-            response["serviceName"] = user_data["service_name"]
-            
-        if "district" in user_data:
-            response["district"] = user_data["district"]
-            
-        if "status" in user_data:
-            response["status"] = user_data["status"]
-            
-        if "phone_number" in user_data:
-            response["phone_number"] = user_data["phone_number"]
-        
+
+        # Add optional service provider fields if they exist
+        optional_fields = [
+            "service_category",
+            "service_name",
+            "district",
+            "status",
+            "phone_number",
+            "main_category",
+            "sub_category",
+        ]
+        for field in optional_fields:
+            if field in user_data:
+                response[field] = user_data[field]
+
         return response
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Error fetching profile: {str(e)}")
