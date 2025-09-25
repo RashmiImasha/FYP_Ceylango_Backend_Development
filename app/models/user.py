@@ -67,10 +67,12 @@ class ServiceProviderApplication(BaseModel):
     main_category: MainCategory
     sub_category: str  # This will be validated based on main_category
     phone_number: str
+
     description: Optional[str] = None
     
     class Config:
         use_enum_values = True
+
 
 class UserLogin(BaseModel):
     email: EmailStr
