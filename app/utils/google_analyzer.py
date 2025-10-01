@@ -50,9 +50,7 @@ def analyze_image_withAI(image_base64: str, prompt: str,api_label: str) -> Image
         google_api_key=api_key,
     )
 
-    # gemini-2.5-flash
-
-    # 
+    # gemini-2.5-flash 
 
     # Use .with_structured_output to enforce the Pydantic schema
     if api_label == "uploadImage":
