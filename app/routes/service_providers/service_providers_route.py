@@ -4,13 +4,8 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from firebase_admin import auth
 from app.config.settings import settings
 from app.database.connection import db
-from app.models.user import (
-    ServiceProviderApplication, ServiceProviderProfile, BaseServiceProfile,
-    MainCategory, AccommodationProfile, FoodDiningProfile, WellnessProfile,
-    ShoppingProfile, ActivitiesProfile, TransportationProfile,
-    AccommodationSubCategory, FoodDiningSubCategory, WellnessSubCategory,
-    ShoppingSubCategory, ActivitiesSubCategory, TransportationSubCategory
-)
+from app.models.user import ServiceProviderApplication
+
 from firebase_admin import exceptions as firebase_exceptions
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import smtplib
@@ -22,31 +17,10 @@ collection = db.collection("users")
 profiles_collection = db.collection("service_provider_profiles")
 security = HTTPBearer()
 
-# Category validation mapping
-CATEGORY_MAPPING = {
-    MainCategory.ACCOMMODATION: [e.value for e in AccommodationSubCategory],
-    MainCategory.FOOD_DINING: [e.value for e in FoodDiningSubCategory],
-    MainCategory.WELLNESS: [e.value for e in WellnessSubCategory],
-    MainCategory.SHOPPING: [e.value for e in ShoppingSubCategory],
-    MainCategory.ACTIVITIES: [e.value for e in ActivitiesSubCategory],
-    MainCategory.TRANSPORTATION: [e.value for e in TransportationSubCategory],
-}
-
-def validate_category_combination(main_category: MainCategory, sub_category: str):
-    """Validate if sub_category belongs to main_category"""
-    valid_subcategories = CATEGORY_MAPPING.get(main_category, [])
-    if sub_category not in valid_subcategories:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Invalid subcategory '{sub_category}' for main category '{main_category}'"
-        )
 
 @router.post("/apply")
 async def apply_service_provider(user: ServiceProviderApplication):
     try:
-        # Validate category combination
-        validate_category_combination(user.main_category, user.sub_category)
-        
         # Check if email already used in applications
         existing = collection.where("email", "==", user.email).stream()
         if any(existing):
@@ -63,8 +37,7 @@ async def apply_service_provider(user: ServiceProviderApplication):
             "status": "Pending",
             "service_name": user.service_name,
             "district": user.district,
-            "main_category": user.main_category,
-            "sub_category": user.sub_category,
+            "service_category": user.service_category,
             "phone_number": user.phone_number,
             "description": user.description,
             "applied_at": datetime.now().isoformat()
@@ -77,8 +50,7 @@ async def apply_service_provider(user: ServiceProviderApplication):
             "application_id": doc_ref.id,
             "status": "Pending",
             "category_info": {
-                "main_category": user.main_category,
-                "sub_category": user.sub_category
+                "service_category": user.service_category,
             }
         }
 
@@ -118,9 +90,7 @@ async def review_service_provider(application_id: str, decision: Literal["Approv
             })
             new_doc_ref.set(user_data)
 
-            # Create empty profile document for the service provider
-            await create_empty_profile(user_record.uid, user_data)
-
+            
             # Delete old document
             doc_ref.delete()
 
@@ -175,92 +145,10 @@ async def review_service_provider(application_id: str, decision: Literal["Approv
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-async def create_empty_profile(uid: str, user_data: Dict[str, Any]):
-    """Create an empty profile document for approved service provider"""
-    main_category = user_data.get("main_category")
-    sub_category = user_data.get("sub_category")
-    
-    # Create base profile structure
-    profile_data = {
-        "uid": uid,
-        "main_category": main_category,
-        "sub_category": sub_category,
-        "profile_completed": False,
-        "base_info": {
-            "service_name": user_data.get("service_name", ""),
-            "description": user_data.get("description", ""),
-            "address": "",
-            "district": user_data.get("district", ""),
-            "phone_number": user_data.get("phone_number", ""),
-            "operating_hours": {},
-            "images": [],
-            "amenities": [],
-            "is_active": True
-        },
-        "category_data": get_empty_category_data(main_category),
-        "created_at": datetime.now().isoformat(),
-        "updated_at": datetime.now().isoformat()
-    }
-    
-    profiles_collection.document(uid).set(profile_data)
-
-def get_empty_category_data(main_category: MainCategory) -> Dict[str, Any]:
-    """Return empty category-specific data structure"""
-    if main_category == MainCategory.ACCOMMODATION:
-        return {
-            "room_types": [],
-            "check_in_time": "14:00",
-            "check_out_time": "11:00",
-            "room_amenities": [],
-            "hotel_amenities": [],
-            "price_range": {}
-        }
-    elif main_category == MainCategory.FOOD_DINING:
-        return {
-            "cuisine_types": [],
-            "menu_items": [],
-            "dietary_options": [],
-            "average_meal_price": {},
-            "delivery_available": False,
-            "takeaway_available": False
-        }
-    elif main_category == MainCategory.WELLNESS:
-        return {
-            "services_offered": [],
-            "therapists": [],
-            "treatment_packages": [],
-            "booking_advance_days": 7,
-            "cancellation_hours": 24
-        }
-    elif main_category == MainCategory.SHOPPING:
-        return {
-            "product_categories": [],
-            "inventory_items": [],
-            "payment_methods": [],
-            "shipping_available": False
-        }
-    elif main_category == MainCategory.ACTIVITIES:
-        return {
-            "activity_types": [],
-            "group_size": {},
-            "equipment_provided": [],
-            "price_per_person": None
-        }
-    elif main_category == MainCategory.TRANSPORTATION:
-        return {
-            "vehicle_types": [],
-            "coverage_areas": [],
-            "booking_advance_hours": 2,
-            "driver_available": True,
-            "insurance_included": True
-        }
-    else:
-        return {}
-
 @router.get("/")
 async def get_all_service_providers(
     status: Optional[str] = None,
-    main_category: Optional[MainCategory] = None,
+   
     district: Optional[str] = None
 ):
     """
@@ -312,23 +200,6 @@ async def get_all_service_providers(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/categories")
-async def get_categories():
-    """Get all available categories and subcategories"""
-    return {
-        "categories": {
-            category.value: {
-                "name": category.value.replace("_", " ").title(),
-                "subcategories": [
-                    {
-                        "value": sub,
-                        "name": sub.replace("_", " ").title()
-                    } for sub in subcategories
-                ]
-            }
-            for category, subcategories in CATEGORY_MAPPING.items()
-        }
-    }
 
 def send_email(to_email: str, subject: str, body: str):
     """Email sender function"""
