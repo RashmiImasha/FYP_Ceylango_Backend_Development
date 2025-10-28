@@ -49,9 +49,7 @@ async def apply_service_provider(user: ServiceProviderApplication):
             "message": "Service provider application submitted successfully",
             "application_id": doc_ref.id,
             "status": "Pending",
-            "category_info": {
-                "service_category": user.service_category,
-            }
+            "service_category": user.service_category
         }
 
     except Exception as e:
@@ -90,8 +88,31 @@ async def review_service_provider(application_id: str, decision: Literal["Approv
             })
             new_doc_ref.set(user_data)
 
-            
-            # Delete old document
+            # Create initial profile for service provider
+            profile_data = {
+                "uid": user_record.uid,
+                "service_name": user_data.get("service_name"),
+                "service_category": user_data.get("service_category"),
+                "description": user_data.get("description", ""),
+                "district": user_data.get("district"),
+                "phone_number": user_data.get("phone_number"),
+                "address": "",
+                "coordinates": None,
+                "email": user_data.get("email"),
+                "website": None,
+                "social_media": None,
+                "operating_hours": None,
+                "profile_images": [],
+                "poster_images": [],
+                "amenities": [],
+                "is_active": True,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            }
+
+            profiles_collection.document(user_record.uid).set(profile_data)
+
+            # Delete old application document
             doc_ref.delete()
 
             # Send approval email
@@ -114,12 +135,9 @@ async def review_service_provider(application_id: str, decision: Literal["Approv
             )
 
             return {
-                "message": "Service provider approved and account created", 
+                "message": "Service provider approved and account created",
                 "uid": user_record.uid,
-                "category_info": {
-                    "main_category": user_data.get("main_category"),
-                    "sub_category": user_data.get("sub_category")
-                }
+                "service_category": user_data.get("service_category")
             }
 
         else:  # Rejected
@@ -148,7 +166,7 @@ async def review_service_provider(application_id: str, decision: Literal["Approv
 @router.get("/")
 async def get_all_service_providers(
     status: Optional[str] = None,
-   
+    service_category: Optional[str] = None,
     district: Optional[str] = None
 ):
     """
@@ -160,8 +178,8 @@ async def get_all_service_providers(
         if status:
             query = query.where("status", "==", status)
         
-        if main_category:
-            query = query.where("main_category", "==", main_category)
+        if service_category:
+            query = query.where("service_category", "==", service_category)
             
         if district:
             query = query.where("district", "==", district)
@@ -178,8 +196,7 @@ async def get_all_service_providers(
                 "full_name": data.get("full_name"),
                 "service_name": data.get("service_name"),
                 "district": data.get("district"),
-                "main_category": data.get("main_category"),
-                "sub_category": data.get("sub_category"),
+                "service_category": data.get("service_category"),
                 "phone_number": data.get("phone_number"),
                 "status": data.get("status", "Pending"),
                 "role": data.get("role"),
@@ -192,7 +209,7 @@ async def get_all_service_providers(
             "service_providers": providers,
             "filters_applied": {
                 "status": status,
-                "main_category": main_category,
+                "service_category": service_category,
                 "district": district
             }
         }

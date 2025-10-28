@@ -11,6 +11,7 @@ from app.routes.emergancy_route import router as emergancy_route
 # service_provider routes
 
 from app.routes.service_providers.service_providers_route import router as service_providers_route
+from app.routes.service_providers.service_provider_profile_route import router as service_provider_profile_route
 from app.routes.service_providers.event_route import router as event_route
 
 
@@ -35,6 +36,7 @@ app.include_router(emergancy_route, prefix="/emergancy")
 
 app.include_router(event_route, prefix="/event")
 app.include_router(service_providers_route, prefix="/service_provider")
+app.include_router(service_provider_profile_route, prefix="/service_provider")
 
 
 @app.get("/")
