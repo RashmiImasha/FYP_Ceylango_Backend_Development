@@ -38,6 +38,7 @@ class UserInDB(UserBase):
 # Service Provider Profile Models
 class BaseServiceProfile(BaseModel):
     service_name: str
+    service_category: str
     description: str
     address: str
     district: str
@@ -47,7 +48,10 @@ class BaseServiceProfile(BaseModel):
     website: Optional[str] = None
     social_media: Optional[Dict[str, str]] = None
     operating_hours: Dict[str, Dict[str, str]]  # {"monday": {"open": "09:00", "close": "17:00"}}
+    
     images: List[str] = []  # URLs to images
+    poster_images: List[str] = []   # Promotional poster images
+
     amenities: List[str] = []
     is_active: bool = True
     created_at: Optional[str] = None
@@ -56,3 +60,30 @@ class BaseServiceProfile(BaseModel):
     
     class Config:
         use_enum_values = True
+
+# Update Profile Request Models
+class UpdateProfileBasicInfo(BaseModel):
+    service_name: str
+    description: str
+    address: str
+    district: str
+    phone_number: str
+    email: Optional[EmailStr] = None
+    website: Optional[str] = None
+    coordinates: Optional[Dict[str, float]] = None
+
+
+class TimeSlot(BaseModel):
+    open: str
+    close: str
+
+class UpdateOperatingHours(BaseModel):
+    operating_hours: Dict[str, TimeSlot]
+
+
+class UpdateSocialMedia(BaseModel):
+    social_media: Dict[str, str]
+
+
+class UpdateAmenities(BaseModel):
+    amenities: List[str]
