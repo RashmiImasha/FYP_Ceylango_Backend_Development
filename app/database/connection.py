@@ -20,3 +20,5 @@ emergancy_collection = db.collection("emergancyContact")
 misplace_collection = db.collection('missingPlace')
 
 event_collection = db.collection("events")
+chat_collection = db.collection("chat")
+

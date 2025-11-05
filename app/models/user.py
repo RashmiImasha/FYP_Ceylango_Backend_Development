@@ -1,8 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import Dict, List, Literal, Optional
 
-
-
 # Base models
 class UserBase(BaseModel):
     email: EmailStr
