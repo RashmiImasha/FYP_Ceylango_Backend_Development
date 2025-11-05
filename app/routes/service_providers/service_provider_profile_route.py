@@ -1,3 +1,4 @@
+import math
 from typing import Optional, Dict, Any, List
 import uuid
 import json
@@ -34,6 +35,20 @@ class UpdatePosterMetadataRequest(BaseModel):
 
 class DeleteImagesRequest(BaseModel):
     image_urls: List[str]
+
+def haversine(lat1, lon1, lat2, lon2):
+    """Calculate distance between two points on Earth in kilometers"""
+    R = 6371  # Earth radius in kilometers
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+
+    a = math.sin(delta_phi/2.0)**2 + \
+        math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda/2.0)**2
+
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    return R * c
 
 
 # ===== AUTH DEPENDENCY =====
@@ -479,6 +494,457 @@ async def get_dashboard_stats(current_user: tuple = Depends(get_current_user)):
             "has_coordinates": bool(profile_data.get("coordinates")),
             "has_operating_hours": bool(profile_data.get("operating_hours")),
             "has_social_media": bool(profile_data.get("social_media")),
+        }
+        
+        return {"stats": stats}
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/profile/{provider_uid}")
+async def get_service_provider_profile(provider_uid: str):
+    """Get public profile of any service provider (for customers)"""
+    try:
+        profile_doc = profiles_collection.document(provider_uid).get()
+        
+        if not profile_doc.exists:
+            raise HTTPException(status_code=404, detail="Service provider profile not found")
+        
+        profile_data = profile_doc.to_dict()
+        
+        # Only return active profiles to public
+        if not profile_data.get("is_active", True):
+            raise HTTPException(status_code=404, detail="Service provider is currently inactive")
+        
+        # Get basic user info
+        user_doc = users_collection.document(provider_uid).get()
+        if user_doc.exists:
+            user_data = user_doc.to_dict()
+            profile_data["provider_info"] = {
+                "full_name": user_data.get("full_name"),
+                "status": user_data.get("status")
+            }
+        
+        profile_data["uid"] = provider_uid
+        
+        return {"profile": profile_data}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/profiles/all")
+async def get_all_service_providers(
+    service_category: Optional[str] = Query(None),
+    district: Optional[str] = Query(None),
+    active_only: bool = Query(True),
+    limit: int = Query(50, le=100),
+    offset: int = Query(0)
+):
+    """Get all service provider profiles with filters"""
+    try:
+        query = profiles_collection
+        
+        if service_category:
+            query = query.where("service_category", "==", service_category)
+        
+        if district:
+            query = query.where("district", "==", district)
+        
+        if active_only:
+            query = query.where("is_active", "==", True)
+        
+        # Apply pagination
+        docs = query.limit(limit).offset(offset).stream()
+        
+        profiles = []
+        for doc in docs:
+            profile_data = doc.to_dict()
+            profile_data["uid"] = doc.id
+            
+            # Get user info
+            user_doc = users_collection.document(doc.id).get()
+            if user_doc.exists:
+                user_data = user_doc.to_dict()
+                profile_data["provider_name"] = user_data.get("full_name", "")
+            
+            profiles.append(profile_data)
+        
+        return {
+            "count": len(profiles),
+            "profiles": profiles,
+            "pagination": {
+                "limit": limit,
+                "offset": offset,
+                "has_more": len(profiles) == limit
+            },
+            "filters": {
+                "service_category": service_category,
+                "district": district,
+                "active_only": active_only
+            }
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/profiles/search")
+async def search_service_providers(
+    service_category: Optional[str] = Query(None),
+    district: Optional[str] = Query(None),
+    active_only: bool = Query(True),
+    limit: int = Query(20, le=100),
+    offset: int = Query(0)
+):
+    """Search and filter service provider profiles (returns complete data)"""
+    try:
+        query = profiles_collection
+        
+        if service_category:
+            query = query.where("service_category", "==", service_category)
+        
+        if district:
+            query = query.where("district", "==", district)
+        
+        if active_only:
+            query = query.where("is_active", "==", True)
+        
+        # Apply pagination
+        docs = query.limit(limit).offset(offset).stream()
+        
+        profiles = []
+        for doc in docs:
+            profile_data = doc.to_dict()
+            
+            # Get user info
+            user_doc = users_collection.document(doc.id).get()
+            user_data = user_doc.to_dict() if user_doc.exists else {}
+            
+            # Complete profile data
+            profile_complete = {
+                "uid": doc.id,
+                "service_name": profile_data.get("service_name", ""),
+                "service_category": profile_data.get("service_category", ""),
+                "description": profile_data.get("description", ""),
+                "address": profile_data.get("address", ""),
+                "district": profile_data.get("district", ""),
+                "coordinates": profile_data.get("coordinates"),
+                "phone_number": profile_data.get("phone_number", ""),
+                "email": profile_data.get("email"),
+                "website": profile_data.get("website"),
+                "social_media": profile_data.get("social_media", {}),
+                "operating_hours": profile_data.get("operating_hours", {}),
+                "profile_images": profile_data.get("profile_images", []),
+                "poster_images": profile_data.get("poster_images", []),
+                "amenities": profile_data.get("amenities", []),
+                "is_active": profile_data.get("is_active", True),
+                "created_at": profile_data.get("created_at"),
+                "updated_at": profile_data.get("updated_at"),
+                "provider_info": {
+                    "full_name": user_data.get("full_name", ""),
+                    "status": user_data.get("status", "")
+                }
+            }
+            
+            profiles.append(profile_complete)
+        
+        return {
+            "count": len(profiles),
+            "profiles": profiles,
+            "pagination": {
+                "limit": limit,
+                "offset": offset,
+                "has_more": len(profiles) == limit
+            },
+            "filters": {
+                "service_category": service_category,
+                "district": district,
+                "active_only": active_only
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/profiles/nearby")
+async def get_nearby_service_providers(
+    latitude: float = Query(..., description="User's current latitude"),
+    longitude: float = Query(..., description="User's current longitude"),
+    radius_km: float = Query(10, description="Search radius in kilometers"),
+    service_category: Optional[str] = Query(None),
+    limit: int = Query(20, le=100)
+):
+    """Get service providers within a specific radius with complete data"""
+    try:
+        query = profiles_collection.where("is_active", "==", True)
+        
+        if service_category:
+            query = query.where("service_category", "==", service_category)
+        
+        docs = query.stream()
+        
+        nearby_providers = []
+        
+        for doc in docs:
+            profile_data = doc.to_dict()
+            coordinates = profile_data.get("coordinates")
+            
+            if coordinates and "lat" in coordinates and "lng" in coordinates:
+                dest_lat = coordinates["lat"]
+                dest_lng = coordinates["lng"]
+                
+                # Calculate distance
+                distance = haversine(latitude, longitude, dest_lat, dest_lng)
+                
+                if distance <= radius_km:
+                    # Get user info
+                    user_doc = users_collection.document(doc.id).get()
+                    user_data = user_doc.to_dict() if user_doc.exists else {}
+                    
+                    # Complete profile with distance
+                    provider_complete = {
+                        "uid": doc.id,
+                        "service_name": profile_data.get("service_name", ""),
+                        "service_category": profile_data.get("service_category", ""),
+                        "description": profile_data.get("description", ""),
+                        "address": profile_data.get("address", ""),
+                        "district": profile_data.get("district", ""),
+                        "coordinates": coordinates,
+                        "phone_number": profile_data.get("phone_number", ""),
+                        "email": profile_data.get("email"),
+                        "website": profile_data.get("website"),
+                        "social_media": profile_data.get("social_media", {}),
+                        "operating_hours": profile_data.get("operating_hours", {}),
+                        "profile_images": profile_data.get("profile_images", []),
+                        "poster_images": profile_data.get("poster_images", []),
+                        "amenities": profile_data.get("amenities", []),
+                        "is_active": profile_data.get("is_active", True),
+                        "created_at": profile_data.get("created_at"),
+                        "updated_at": profile_data.get("updated_at"),
+                        "provider_info": {
+                            "full_name": user_data.get("full_name", ""),
+                            "status": user_data.get("status", "")
+                        },
+                        "distance_km": round(distance, 2)
+                    }
+                    
+                    nearby_providers.append(provider_complete)
+        
+        # Sort by distance
+        nearby_providers.sort(key=lambda x: x["distance_km"])
+        
+        # Apply limit
+        nearby_providers = nearby_providers[:limit]
+        
+        if not nearby_providers:
+            return {
+                "count": 0,
+                "profiles": [],
+                "message": f"No service providers found within {radius_km} km"
+            }
+        
+        return {
+            "count": len(nearby_providers),
+            "profiles": nearby_providers,
+            "search_params": {
+                "latitude": latitude,
+                "longitude": longitude,
+                "radius_km": radius_km,
+                "service_category": service_category
+            }
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/profiles/by-category/{service_category}")
+async def get_providers_by_category(
+    service_category: str,
+    district: Optional[str] = Query(None),
+    limit: int = Query(20, le=100),
+    offset: int = Query(0)
+):
+    """Get all providers in a specific category with complete profile data"""
+    try:
+        # Validate service_category
+        if not service_category or not service_category.strip():
+            raise HTTPException(status_code=400, detail="Service category is required")
+        
+        # Build query
+        query = profiles_collection.where("service_category", "==", service_category.strip()).where("is_active", "==", True)
+        
+        if district and district.strip():
+            query = query.where("district", "==", district.strip())
+        
+        # Apply pagination
+        docs = query.limit(limit).offset(offset).stream()
+        
+        providers = []
+        for doc in docs:
+            profile_data = doc.to_dict()
+            
+            # Get user info
+            user_doc = users_collection.document(doc.id).get()
+            user_data = user_doc.to_dict() if user_doc.exists else {}
+            
+            # Build complete provider profile
+            provider_profile = {
+                "uid": doc.id,
+                # Basic service information
+                "service_name": profile_data.get("service_name", ""),
+                "service_category": profile_data.get("service_category", ""),
+                "description": profile_data.get("description", ""),
+                "address": profile_data.get("address", ""),
+                "district": profile_data.get("district", ""),
+                
+                # Contact information
+                "phone_number": profile_data.get("phone_number", ""),
+                "email": profile_data.get("email"),
+                "website": profile_data.get("website"),
+                
+                # Location
+                "coordinates": profile_data.get("coordinates"),
+                
+                # Operating information
+                "operating_hours": profile_data.get("operating_hours", {}),
+                "social_media": profile_data.get("social_media", {}),
+                
+                # Media
+                "profile_images": profile_data.get("profile_images", []),  # Regular images
+                "poster_images": profile_data.get("poster_images", []),    # Promotional posters
+                
+                # Features
+                "amenities": profile_data.get("amenities", []),
+                
+                # Status and metadata
+                "is_active": profile_data.get("is_active", True),
+                "created_at": profile_data.get("created_at"),
+                "updated_at": profile_data.get("updated_at"),
+                
+                # Provider personal info
+                "provider_info": {
+                    "full_name": user_data.get("full_name", ""),
+                    "email": user_data.get("email", ""),
+                    "status": user_data.get("status", "")
+                }
+            }
+            
+            providers.append(provider_profile)
+        
+        return {
+            "service_category": service_category,
+            "count": len(providers),
+            "profiles": providers,
+            "pagination": {
+                "limit": limit,
+                "offset": offset,
+                "has_more": len(providers) == limit
+            },
+            "filters_applied": {
+                "district": district if district else "All districts"
+            }
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching providers by category {service_category}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error while fetching service providers")
+    
+
+@router.get("/profiles/by-district/{district}")
+async def get_providers_by_district(
+    district: str,
+    service_category: Optional[str] = Query(None),
+    limit: int = Query(20, le=100),
+    offset: int = Query(0)
+):
+    """Get all providers in a specific district"""
+    try:
+        query = profiles_collection.where("district", "==", district).where("is_active", "==", True)
+        
+        if service_category:
+            query = query.where("service_category", "==", service_category)
+        
+        docs = query.limit(limit).offset(offset).stream()
+        
+        providers = []
+        for doc in docs:
+            profile_data = doc.to_dict()
+            
+            user_doc = users_collection.document(doc.id).get()
+            user_data = user_doc.to_dict() if user_doc.exists else {}
+            
+            provider_summary = {
+                "uid": doc.id,
+                "service_name": profile_data.get("service_name", ""),
+                "service_category": profile_data.get("service_category", ""),
+                "description": profile_data.get("description", ""),
+                "address": profile_data.get("address", ""),
+                "district": profile_data.get("district", ""),
+                "coordinates": profile_data.get("coordinates"),
+                "phone_number": profile_data.get("phone_number", ""),
+                "email": profile_data.get("email"),
+                "website": profile_data.get("website"),
+                "social_media": profile_data.get("social_media", {}),
+                "operating_hours": profile_data.get("operating_hours", {}),
+                "profile_images": profile_data.get("profile_images", []),
+                "poster_images": profile_data.get("poster_images", []),
+                "amenities": profile_data.get("amenities", []),
+                "is_active": profile_data.get("is_active", True),
+                "created_at": profile_data.get("created_at"),
+                "updated_at": profile_data.get("updated_at"),
+                "provider_info": {
+                    "full_name": user_data.get("full_name", ""),
+                    "status": user_data.get("status", "")
+            }}
+            
+            providers.append(provider_summary)
+        
+        return {
+            "district": district,
+            "count": len(providers),
+            "profiles": providers,
+            "pagination": {
+                "limit": limit,
+                "offset": offset,
+                "has_more": len(providers) == limit
+            }
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/dashboard/stats")
+async def get_dashboard_stats(current_user: tuple = Depends(get_current_user)):
+    """Get dashboard statistics for service provider"""
+    uid, user_data = current_user
+    
+    try:
+        profile_doc = profiles_collection.document(uid).get()
+        
+        if not profile_doc.exists:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        
+        profile_data = profile_doc.to_dict()
+        
+        # Calculate completion percentage
+        completion_score = calculate_profile_completion(profile_data)
+        
+        stats = {
+            "profile_completion": completion_score,
+            "is_active": profile_data.get("is_active", True),
+            "profile_images_count": len(profile_data.get("profile_images", [])),
+            "poster_images_count": len(profile_data.get("poster_images", [])),
+            "amenities_count": len(profile_data.get("amenities", [])),
+            "has_coordinates": bool(profile_data.get("coordinates")),
+            "has_operating_hours": bool(profile_data.get("operating_hours")),
+            "has_social_media": bool(profile_data.get("social_media")),
+            "profile_views": 0,  # TODO: Implement view tracking
+            "total_bookings": 0,  # TODO: Implement booking system
         }
         
         return {"stats": stats}
