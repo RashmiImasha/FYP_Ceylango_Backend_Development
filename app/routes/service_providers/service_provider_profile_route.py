@@ -74,6 +74,59 @@ async def get_my_profile(current_user: tuple = Depends(get_current_user)):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+@router.get("/me")
+async def get_current_service_provider(
+    current_user: tuple = Depends(get_current_user)
+):
+    """
+    Get currently authenticated service provider's profile + user info.
+    """
+    uid, user_data = current_user
+
+    try:
+        # Fetch service provider profile
+        profile_doc = profiles_collection.document(uid).get()
+        if not profile_doc.exists:
+            raise HTTPException(status_code=404, detail="Service provider profile not found")
+
+        profile_data = profile_doc.to_dict()
+
+        # Merge both Firestore user info and service provider profile
+        response_data = {
+            "uid": uid,
+            "email": user_data.get("email"),
+            "full_name": user_data.get("full_name"),
+            "role": user_data.get("role"),
+            "status": user_data.get("status", "active"),
+            "profile": {
+                "service_name": profile_data.get("service_name"),
+                "service_category": profile_data.get("service_category"),
+                "description": profile_data.get("description"),
+                "address": profile_data.get("address"),
+                "district": profile_data.get("district"),
+                "phone_number": profile_data.get("phone_number"),
+                "email": profile_data.get("email"),
+                "website": profile_data.get("website"),
+                "coordinates": profile_data.get("coordinates"),
+                "amenities": profile_data.get("amenities", []),
+                "operating_hours": profile_data.get("operating_hours"),
+                "social_media": profile_data.get("social_media"),
+                "profile_images": profile_data.get("profile_images", []),
+                "poster_images": profile_data.get("poster_images", []),
+                "is_active": profile_data.get("is_active", True),
+                "created_at": profile_data.get("created_at"),
+                "updated_at": profile_data.get("updated_at")
+            }
+        }
+
+        return {"message": "Current service provider fetched successfully", "data": response_data}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.put("/profile/basic-info")
