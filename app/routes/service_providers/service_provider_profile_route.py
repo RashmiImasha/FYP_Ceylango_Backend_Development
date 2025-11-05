@@ -1,33 +1,42 @@
 from typing import Optional, Dict, Any, List
+import uuid
+import json
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Form, Query
 from firebase_admin import auth
 from app.database.connection import db
-from app.models.user import BaseServiceProfile, UpdateAmenities, UpdateOperatingHours, UpdateProfileBasicInfo, UpdateSocialMedia 
+from app.models.user import (
+    UpdateProfileRequest,
+   
+)
 from app.utils.storage_handle import upload_file_to_storage, delete_file_from_storage
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime
-import math
+from pydantic import BaseModel
 
 router = APIRouter()
 profiles_collection = db.collection("service_provider_profiles")
 users_collection = db.collection("users")
 security = HTTPBearer()
 
-def haversine(lat1, lon1, lat2, lon2):
-    """Calculate distance between two points on Earth in kilometers"""
-    R = 6371  # Earth radius in kilometers
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    delta_phi = math.radians(lat2 - lat1)
-    delta_lambda = math.radians(lon2 - lon1)
-
-    a = math.sin(delta_phi/2.0)**2 + \
-        math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda/2.0)**2
-
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-    return R * c
 
 
+class PosterMetadata(BaseModel):
+    name: str
+    description: str
+    expiration_date: str
+
+
+class UpdatePosterMetadataRequest(BaseModel):
+    poster_id: str
+    name: str
+    description: str
+    expiration_date: str
+
+class DeleteImagesRequest(BaseModel):
+    image_urls: List[str]
+
+
+# ===== AUTH DEPENDENCY =====
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Verify JWT token and return current user"""
     try:
@@ -35,7 +44,6 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         decoded_token = auth.verify_id_token(token)
         uid = decoded_token["uid"]
         
-        # Check if user is a service provider
         user_doc = users_collection.document(uid).get()
         if not user_doc.exists:
             raise HTTPException(status_code=404, detail="User not found")
@@ -48,6 +56,8 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid authentication token")
 
+
+# ===== ENDPOINTS =====
 
 @router.get("/profile")
 async def get_my_profile(current_user: tuple = Depends(get_current_user)):
@@ -76,157 +86,78 @@ async def get_my_profile(current_user: tuple = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.put("/profile/basic-info")
-async def update_basic_info(
-    service_name: str = Form(...),
-    description: str = Form(...),
-    address: str = Form(...),
-    district: str = Form(...),
-    phone_number: str = Form(...),
-    email: Optional[str] = Form(None),
-    website: Optional[str] = Form(None),
-    latitude: Optional[float] = Form(None),
-    longitude: Optional[float] = Form(None),
+
+@router.put("/profile")
+async def update_profile(
+    request: UpdateProfileRequest,
     current_user: tuple = Depends(get_current_user)
 ):
-    """Update basic information of service provider profile"""
+    """Update all profile information in a single request"""
     uid, user_data = current_user
     
     try:
         profile_doc = profiles_collection.document(uid)
         
-        # Check if profile exists
-        if not profile_doc.get().exists:
+        profile_snapshot = profile_doc.get()
+        if not profile_snapshot.exists:
             raise HTTPException(status_code=404, detail="Profile not found")
         
-        # Prepare coordinates
-        coordinates = None
-        if latitude is not None and longitude is not None:
-            coordinates = {"lat": latitude, "lng": longitude}
+        # Get existing profile data to preserve service_category
+        existing_profile = profile_snapshot.to_dict()
         
-        # Update basic info
+        # Prepare complete update data
         update_data = {
-            "service_name": service_name.strip(),
-            "description": description.strip(),
-            "address": address.strip(),
-            "district": district.strip(),
-            "phone_number": phone_number.strip(),
+            # Basic Info
+            "service_name": request.service_name.strip(),
+            "description": request.description.strip(),
+            "address": request.address.strip(),
+            "district": request.district.strip(),
+            "phone_number": request.phone_number.strip(),
+            
+            # Preserve service_category from existing profile
+            "service_category": existing_profile.get("service_category"),
+            
+            # Location
+            "coordinates": {
+                "lat": request.latitude, 
+                "lng": request.longitude
+            },
+            
+            # Operating Hours - already in correct format from frontend
+            "operating_hours": request.operating_hours,
+            
+            # Social Media
+            "social_media": request.social_media,
+            
+            # Amenities
+            "amenities": request.amenities,
+            
+            # Timestamp
             "updated_at": datetime.now().isoformat()
         }
         
-        # Add optional fields if provided
-        if email:
-            update_data["email"] = email
-        if website:
-            update_data["website"] = website
-        if coordinates:
-            update_data["coordinates"] = coordinates
+        # Add optional fields
+        if request.email:
+            update_data["email"] = request.email.strip()
+        if request.website:
+            update_data["website"] = request.website.strip()
         
+        # Single update operation
         profile_doc.update(update_data)
         
         return {
-            "message": "Basic information updated successfully",
+            "message": "Profile updated successfully",
             "updated_at": update_data["updated_at"]
         }
     
     except HTTPException:
         raise
     except Exception as e:
+        print(f"Error updating profile: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.put("/profile/operating-hours")
-async def update_operating_hours(
-    request: UpdateOperatingHours,
-    current_user: tuple = Depends(get_current_user)
-):
-    """Update operating hours"""
-    uid, user_data = current_user
-    
-    try:
-        profile_doc = profiles_collection.document(uid)
-        
-        if not profile_doc.get().exists:
-            raise HTTPException(status_code=404, detail="Profile not found")
-        
-        # Convert Pydantic models to dict
-        operating_hours_dict = {
-            day: {"open": slot.open, "close": slot.close} 
-            for day, slot in request.operating_hours.items()
-        }
-        
-        update_data = {
-            "operating_hours": operating_hours_dict,
-            "updated_at": datetime.now().isoformat()
-        }
-        
-        profile_doc.update(update_data)
-        
-        return {
-            "message": "Operating hours updated successfully",
-            "updated_at": update_data["updated_at"]
-        }
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
-@router.put("/profile/social-media")
-async def update_social_media(
-    request: UpdateSocialMedia,  # Change this - use Pydantic model
-    current_user: tuple = Depends(get_current_user)
-):
-    """Update social media links"""
-    uid, user_data = current_user
-    
-    try:
-        profile_doc = profiles_collection.document(uid)
-        
-        if not profile_doc.get().exists:
-            raise HTTPException(status_code=404, detail="Profile not found")
-        
-        update_data = {
-            "social_media": request.social_media,  # Access from model
-            "updated_at": datetime.now().isoformat()
-        }
-        
-        profile_doc.update(update_data)
-        
-        return {
-            "message": "Social media links updated successfully",
-            "updated_at": update_data["updated_at"]
-        }
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
-@router.put("/profile/amenities")
-async def update_amenities(
-    request: UpdateAmenities, 
-    current_user: tuple = Depends(get_current_user)
-):
-    """Update amenities/features"""
-    uid, user_data = current_user
-    
-    try:
-        profile_doc = profiles_collection.document(uid)
-        
-        if not profile_doc.get().exists:
-            raise HTTPException(status_code=404, detail="Profile not found")
-        
-        update_data = {
-            "amenities": request.amenities,  # Access from model
-            "updated_at": datetime.now().isoformat()
-        }
-        
-        profile_doc.update(update_data)
-        
-        return {
-            "message": "Amenities updated successfully",
-            "updated_at": update_data["updated_at"]
-        }
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
+# ✅ FormData only for file uploads
 @router.post("/profile/images/profile")
 async def upload_profile_images(
     images: List[UploadFile] = File(...),
@@ -243,10 +174,13 @@ async def upload_profile_images(
             raise HTTPException(status_code=404, detail="Profile not found")
         
         # Validate file types
-        allowed_types = ["image/jpeg", "image/jpg", "image/png"]
+        allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/webp"]
         for img in images:
             if img.content_type not in allowed_types:
-                raise HTTPException(status_code=400, detail=f"Unsupported file type: {img.content_type}")
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Unsupported file type: {img.content_type}"
+                )
         
         # Upload images
         image_urls = []
@@ -259,7 +193,6 @@ async def upload_profile_images(
         current_images = profile_data.get("profile_images", [])
         current_images.extend(image_urls)
         
-        # Update profile
         profile_doc.update({
             "profile_images": current_images,
             "updated_at": datetime.now().isoformat()
@@ -277,12 +210,75 @@ async def upload_profile_images(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ✅ FormData for file + metadata as JSON string
 @router.post("/profile/images/posters")
-async def upload_poster_images(
-    posters: List[UploadFile] = File(...),
+async def upload_poster_image(
+    poster: UploadFile = File(...),
+    metadata: str = Form(...),  # JSON string
     current_user: tuple = Depends(get_current_user)
 ):
-    """Upload poster images (promotional images)"""
+    """Upload a promotional poster with metadata"""
+    uid, user_data = current_user
+    
+    try:
+        # Parse JSON metadata
+        poster_metadata = PosterMetadata.parse_raw(metadata)
+        
+        profile_doc = profiles_collection.document(uid)
+        profile_data = profile_doc.get().to_dict()
+        
+        if not profile_data:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        
+        # Validate file type
+        allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/webp"]
+        if poster.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Unsupported file type: {poster.content_type}"
+            )
+        
+        # Upload poster image
+        image_url = upload_file_to_storage(poster, "service_provider_posters")
+        
+        if not image_url:
+            raise HTTPException(status_code=500, detail="Failed to upload image")
+        
+        # Create poster object
+        poster_id = str(uuid.uuid4())
+        poster_data = {
+            "id": poster_id,
+            "name": poster_metadata.name.strip(),
+            "description": poster_metadata.description.strip(),
+            "expiration_date": poster_metadata.expiration_date,
+            "image_url": image_url,
+            "created_at": datetime.now().isoformat()
+        }
+        
+        current_posters = profile_data.get("poster_images", [])
+        current_posters.append(poster_data)
+        
+        profile_doc.update({
+            "poster_images": current_posters,
+            "updated_at": datetime.now().isoformat()
+        })
+        
+        return {
+            "message": "Poster uploaded successfully",
+            "poster": poster_data
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/profile/images/posters/metadata")
+async def update_poster_metadata(
+    request: UpdatePosterMetadataRequest,
+    current_user: tuple = Depends(get_current_user)
+):
+    """Update poster metadata (name, description, expiration_date) without changing the image"""
     uid, user_data = current_user
     
     try:
@@ -292,44 +288,46 @@ async def upload_poster_images(
         if not profile_data:
             raise HTTPException(status_code=404, detail="Profile not found")
         
-        # Validate file types
-        allowed_types = ["image/jpeg", "image/jpg", "image/png"]
-        for poster in posters:
-            if poster.content_type not in allowed_types:
-                raise HTTPException(status_code=400, detail=f"Unsupported file type: {poster.content_type}")
-        
-        # Upload posters
-        poster_urls = []
-        for poster in posters:
-            url = upload_file_to_storage(poster, "service_provider_posters")
-            if url:
-                poster_urls.append(url)
-        
-        # Get current posters and append new ones
         current_posters = profile_data.get("poster_images", [])
-        current_posters.extend(poster_urls)
         
-        # Update profile
+        # Find and update the specific poster
+        poster_found = False
+        updated_posters = []
+        
+        for poster in current_posters:
+            if poster.get("id") == request.poster_id:
+                poster_found = True
+                # Update only the metadata fields
+                poster["name"] = request.name.strip()
+                poster["description"] = request.description.strip()
+                poster["expiration_date"] = request.expiration_date
+                poster["updated_at"] = datetime.now().isoformat()
+            updated_posters.append(poster)
+        
+        if not poster_found:
+            raise HTTPException(status_code=404, detail="Poster not found")
+        
+        # Update the posters array in Firestore
         profile_doc.update({
-            "poster_images": current_posters,
+            "poster_images": updated_posters,
             "updated_at": datetime.now().isoformat()
         })
         
         return {
-            "message": f"{len(poster_urls)} posters uploaded successfully",
-            "uploaded_posters": poster_urls,
-            "total_posters": len(current_posters)
+            "message": "Poster metadata updated successfully",
+            "poster_id": request.poster_id
         }
     
     except HTTPException:
         raise
     except Exception as e:
+        print(f"Error updating poster metadata: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
+    
+# ✅ JSON endpoint for deletions
 @router.delete("/profile/images/profile")
 async def delete_profile_images(
-    image_urls: List[str],
+    request: DeleteImagesRequest,
     current_user: tuple = Depends(get_current_user)
 ):
     """Delete specific profile images"""
@@ -345,7 +343,7 @@ async def delete_profile_images(
         current_images = profile_data.get("profile_images", [])
         
         # Remove images from storage
-        for url in image_urls:
+        for url in request.image_urls:
             if url in current_images:
                 current_images.remove(url)
                 delete_file_from_storage(
@@ -353,7 +351,6 @@ async def delete_profile_images(
                     {"profile_images": "service_provider_images"}
                 )
         
-        # Update profile
         profile_doc.update({
             "profile_images": current_images,
             "updated_at": datetime.now().isoformat()
@@ -361,7 +358,7 @@ async def delete_profile_images(
         
         return {
             "message": "Images deleted successfully",
-            "deleted_count": len(image_urls),
+            "deleted_count": len(request.image_urls),
             "remaining_images": len(current_images)
         }
     
@@ -369,12 +366,12 @@ async def delete_profile_images(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/profile/images/posters")
-async def delete_poster_images(
-    poster_urls: List[str],
+@router.delete("/profile/images/posters/{poster_id}")
+async def delete_poster_image(
+    poster_id: str,
     current_user: tuple = Depends(get_current_user)
 ):
-    """Delete specific poster images"""
+    """Delete a specific poster by ID"""
     uid, user_data = current_user
     
     try:
@@ -386,27 +383,42 @@ async def delete_poster_images(
         
         current_posters = profile_data.get("poster_images", [])
         
-        # Remove posters from storage
-        for url in poster_urls:
-            if url in current_posters:
-                current_posters.remove(url)
+        poster_to_delete = None
+        updated_posters = []
+        
+        for poster in current_posters:
+            if poster.get("id") == poster_id:
+                poster_to_delete = poster
+            else:
+                updated_posters.append(poster)
+        
+        if not poster_to_delete:
+            raise HTTPException(status_code=404, detail="Poster not found")
+        
+        # Delete from storage
+        try:
+            image_url = poster_to_delete.get("image_url")
+            if image_url:
                 delete_file_from_storage(
-                    {"poster_images": [url]}, 
+                    {"poster_images": [image_url]}, 
                     {"poster_images": "service_provider_posters"}
                 )
+        except Exception as storage_error:
+            print(f"Warning: Failed to delete image from storage: {storage_error}")
         
-        # Update profile
         profile_doc.update({
-            "poster_images": current_posters,
+            "poster_images": updated_posters,
             "updated_at": datetime.now().isoformat()
         })
         
         return {
-            "message": "Posters deleted successfully",
-            "deleted_count": len(poster_urls),
-            "remaining_posters": len(current_posters)
+            "message": "Poster deleted successfully",
+            "deleted_poster_id": poster_id,
+            "remaining_posters": len(updated_posters)
         }
     
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -443,353 +455,6 @@ async def toggle_profile_status(current_user: tuple = Depends(get_current_user))
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/profile/{provider_uid}")
-async def get_service_provider_profile(provider_uid: str):
-    """Get public profile of any service provider (for customers)"""
-    try:
-        profile_doc = profiles_collection.document(provider_uid).get()
-        
-        if not profile_doc.exists:
-            raise HTTPException(status_code=404, detail="Service provider profile not found")
-        
-        profile_data = profile_doc.to_dict()
-        
-        # Only return active profiles to public
-        if not profile_data.get("is_active", True):
-            raise HTTPException(status_code=404, detail="Service provider is currently inactive")
-        
-        # Get basic user info
-        user_doc = users_collection.document(provider_uid).get()
-        if user_doc.exists:
-            user_data = user_doc.to_dict()
-            profile_data["provider_info"] = {
-                "full_name": user_data.get("full_name"),
-                "status": user_data.get("status")
-            }
-        
-        profile_data["uid"] = provider_uid
-        
-        return {"profile": profile_data}
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/profiles/all")
-async def get_all_service_providers(
-    service_category: Optional[str] = Query(None),
-    district: Optional[str] = Query(None),
-    active_only: bool = Query(True),
-    limit: int = Query(50, le=100),
-    offset: int = Query(0)
-):
-    """Get all service provider profiles with filters"""
-    try:
-        query = profiles_collection
-        
-        if service_category:
-            query = query.where("service_category", "==", service_category)
-        
-        if district:
-            query = query.where("district", "==", district)
-        
-        if active_only:
-            query = query.where("is_active", "==", True)
-        
-        # Apply pagination
-        docs = query.limit(limit).offset(offset).stream()
-        
-        profiles = []
-        for doc in docs:
-            profile_data = doc.to_dict()
-            profile_data["uid"] = doc.id
-            
-            # Get user info
-            user_doc = users_collection.document(doc.id).get()
-            if user_doc.exists:
-                user_data = user_doc.to_dict()
-                profile_data["provider_name"] = user_data.get("full_name", "")
-            
-            profiles.append(profile_data)
-        
-        return {
-            "count": len(profiles),
-            "profiles": profiles,
-            "pagination": {
-                "limit": limit,
-                "offset": offset,
-                "has_more": len(profiles) == limit
-            },
-            "filters": {
-                "service_category": service_category,
-                "district": district,
-                "active_only": active_only
-            }
-        }
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/profiles/search")
-async def search_service_providers(
-    service_category: Optional[str] = Query(None),
-    district: Optional[str] = Query(None),
-    active_only: bool = Query(True),
-    limit: int = Query(20, le=100),
-    offset: int = Query(0)
-):
-    """Search and filter service provider profiles (returns summary data)"""
-    try:
-        query = profiles_collection
-        
-        if service_category:
-            query = query.where("service_category", "==", service_category)
-        
-        if district:
-            query = query.where("district", "==", district)
-        
-        if active_only:
-            query = query.where("is_active", "==", True)
-        
-        # Apply pagination
-        docs = query.limit(limit).offset(offset).stream()
-        
-        profiles = []
-        for doc in docs:
-            profile_data = doc.to_dict()
-            
-            # Get user info
-            user_doc = users_collection.document(doc.id).get()
-            user_data = user_doc.to_dict() if user_doc.exists else {}
-            
-            # Create summary for search results
-            profile_summary = {
-                "uid": doc.id,
-                "service_name": profile_data.get("service_name", ""),
-                "service_category": profile_data.get("service_category", ""),
-                "district": profile_data.get("district", ""),
-                "description": profile_data.get("description", "")[:200],
-                "profile_images": profile_data.get("profile_images", [])[:3],  # First 3 images
-                "poster_images": profile_data.get("poster_images", [])[:2],    # First 2 posters
-                "is_active": profile_data.get("is_active", True),
-                "provider_name": user_data.get("full_name", ""),
-                "coordinates": profile_data.get("coordinates"),
-                "phone_number": profile_data.get("phone_number"),
-                "amenities": profile_data.get("amenities", []),
-                "created_at": profile_data.get("created_at")
-            }
-            
-            profiles.append(profile_summary)
-        
-        return {
-            "count": len(profiles),
-            "profiles": profiles,
-            "pagination": {
-                "limit": limit,
-                "offset": offset,
-                "has_more": len(profiles) == limit
-            },
-            "filters": {
-                "service_category": service_category,
-                "district": district,
-                "active_only": active_only
-            }
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/profiles/nearby")
-async def get_nearby_service_providers(
-    latitude: float = Query(..., description="User's current latitude"),
-    longitude: float = Query(..., description="User's current longitude"),
-    radius_km: float = Query(10, description="Search radius in kilometers"),
-    service_category: Optional[str] = Query(None),
-    limit: int = Query(20, le=100)
-):
-    """Get service providers within a specific radius"""
-    try:
-        query = profiles_collection.where("is_active", "==", True)
-        
-        if service_category:
-            query = query.where("service_category", "==", service_category)
-        
-        docs = query.stream()
-        
-        nearby_providers = []
-        
-        for doc in docs:
-            profile_data = doc.to_dict()
-            coordinates = profile_data.get("coordinates")
-            
-            if coordinates and "lat" in coordinates and "lng" in coordinates:
-                dest_lat = coordinates["lat"]
-                dest_lng = coordinates["lng"]
-                
-                # Calculate distance
-                distance = haversine(latitude, longitude, dest_lat, dest_lng)
-                
-                if distance <= radius_km:
-                    # Get user info
-                    user_doc = users_collection.document(doc.id).get()
-                    user_data = user_doc.to_dict() if user_doc.exists else {}
-                    
-                    provider_summary = {
-                        "uid": doc.id,
-                        "service_name": profile_data.get("service_name", ""),
-                        "service_category": profile_data.get("service_category", ""),
-                        "district": profile_data.get("district", ""),
-                        "description": profile_data.get("description", "")[:200],
-                        "profile_images": profile_data.get("profile_images", [])[:3],
-                        "poster_images": profile_data.get("poster_images", [])[:2],
-                        "provider_name": user_data.get("full_name", ""),
-                        "coordinates": coordinates,
-                        "phone_number": profile_data.get("phone_number"),
-                        "distance_km": round(distance, 2),
-                        "amenities": profile_data.get("amenities", [])
-                    }
-                    
-                    nearby_providers.append(provider_summary)
-        
-        # Sort by distance
-        nearby_providers.sort(key=lambda x: x["distance_km"])
-        
-        # Apply limit
-        nearby_providers = nearby_providers[:limit]
-        
-        if not nearby_providers:
-            return {
-                "count": 0,
-                "profiles": [],
-                "message": f"No service providers found within {radius_km} km"
-            }
-        
-        return {
-            "count": len(nearby_providers),
-            "profiles": nearby_providers,
-            "search_params": {
-                "latitude": latitude,
-                "longitude": longitude,
-                "radius_km": radius_km,
-                "service_category": service_category
-            }
-        }
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/profiles/by-category/{service_category}")
-async def get_providers_by_category(
-    service_category: str,
-    district: Optional[str] = Query(None),
-    limit: int = Query(20, le=100),
-    offset: int = Query(0)
-):
-    """Get all providers in a specific category"""
-    try:
-        query = profiles_collection.where("service_category", "==", service_category).where("is_active", "==", True)
-        
-        if district:
-            query = query.where("district", "==", district)
-        
-        docs = query.limit(limit).offset(offset).stream()
-        
-        providers = []
-        for doc in docs:
-            profile_data = doc.to_dict()
-            
-            user_doc = users_collection.document(doc.id).get()
-            user_data = user_doc.to_dict() if user_doc.exists else {}
-            
-            provider_summary = {
-                "uid": doc.id,
-                "service_name": profile_data.get("service_name", ""),
-                "service_category": profile_data.get("service_category", ""),
-                "district": profile_data.get("district", ""),
-                "description": profile_data.get("description", "")[:200],
-                "profile_images": profile_data.get("profile_images", [])[:3],
-                "poster_images": profile_data.get("poster_images", [])[:2],
-                "provider_name": user_data.get("full_name", ""),
-                "coordinates": profile_data.get("coordinates"),
-                "phone_number": profile_data.get("phone_number"),
-                "amenities": profile_data.get("amenities", [])
-            }
-            
-            providers.append(provider_summary)
-        
-        return {
-            "service_category": service_category,
-            "count": len(providers),
-            "profiles": providers,
-            "pagination": {
-                "limit": limit,
-                "offset": offset,
-                "has_more": len(providers) == limit
-            }
-        }
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/profiles/by-district/{district}")
-async def get_providers_by_district(
-    district: str,
-    service_category: Optional[str] = Query(None),
-    limit: int = Query(20, le=100),
-    offset: int = Query(0)
-):
-    """Get all providers in a specific district"""
-    try:
-        query = profiles_collection.where("district", "==", district).where("is_active", "==", True)
-        
-        if service_category:
-            query = query.where("service_category", "==", service_category)
-        
-        docs = query.limit(limit).offset(offset).stream()
-        
-        providers = []
-        for doc in docs:
-            profile_data = doc.to_dict()
-            
-            user_doc = users_collection.document(doc.id).get()
-            user_data = user_doc.to_dict() if user_doc.exists else {}
-            
-            provider_summary = {
-                "uid": doc.id,
-                "service_name": profile_data.get("service_name", ""),
-                "service_category": profile_data.get("service_category", ""),
-                "district": profile_data.get("district", ""),
-                "description": profile_data.get("description", "")[:200],
-                "profile_images": profile_data.get("profile_images", [])[:3],
-                "poster_images": profile_data.get("poster_images", [])[:2],
-                "provider_name": user_data.get("full_name", ""),
-                "coordinates": profile_data.get("coordinates"),
-                "phone_number": profile_data.get("phone_number"),
-                "amenities": profile_data.get("amenities", [])
-            }
-            
-            providers.append(provider_summary)
-        
-        return {
-            "district": district,
-            "count": len(providers),
-            "profiles": providers,
-            "pagination": {
-                "limit": limit,
-                "offset": offset,
-                "has_more": len(providers) == limit
-            }
-        }
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @router.get("/dashboard/stats")
 async def get_dashboard_stats(current_user: tuple = Depends(get_current_user)):
     """Get dashboard statistics for service provider"""
@@ -803,7 +468,6 @@ async def get_dashboard_stats(current_user: tuple = Depends(get_current_user)):
         
         profile_data = profile_doc.to_dict()
         
-        # Calculate completion percentage
         completion_score = calculate_profile_completion(profile_data)
         
         stats = {
@@ -815,8 +479,6 @@ async def get_dashboard_stats(current_user: tuple = Depends(get_current_user)):
             "has_coordinates": bool(profile_data.get("coordinates")),
             "has_operating_hours": bool(profile_data.get("operating_hours")),
             "has_social_media": bool(profile_data.get("social_media")),
-            "profile_views": 0,  # TODO: Implement view tracking
-            "total_bookings": 0,  # TODO: Implement booking system
         }
         
         return {"stats": stats}
@@ -828,31 +490,17 @@ async def get_dashboard_stats(current_user: tuple = Depends(get_current_user)):
 def calculate_profile_completion(profile_data: Dict[str, Any]) -> Dict[str, Any]:
     """Calculate profile completion percentage"""
     
-    # Required fields (60% weight)
     required_fields = ["service_name", "description", "address", "phone_number", "service_category"]
     required_completed = sum(1 for field in required_fields if profile_data.get(field))
     required_percentage = (required_completed / len(required_fields)) * 60
     
-    # Optional fields (40% weight)
     optional_score = 0
-    
-    if profile_data.get("profile_images"):
-        optional_score += 15  # Images are important
-    
-    if profile_data.get("poster_images"):
-        optional_score += 10  # Posters add value
-    
-    if profile_data.get("operating_hours"):
-        optional_score += 5
-    
-    if profile_data.get("coordinates"):
-        optional_score += 5
-    
-    if profile_data.get("social_media"):
-        optional_score += 3
-    
-    if profile_data.get("amenities"):
-        optional_score += 2
+    if profile_data.get("profile_images"): optional_score += 15
+    if profile_data.get("poster_images"): optional_score += 10
+    if profile_data.get("operating_hours"): optional_score += 5
+    if profile_data.get("coordinates"): optional_score += 5
+    if profile_data.get("social_media"): optional_score += 3
+    if profile_data.get("amenities"): optional_score += 2
     
     total_percentage = required_percentage + optional_score
     
