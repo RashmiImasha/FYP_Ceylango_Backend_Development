@@ -152,67 +152,60 @@ async def create_conversation(
 
 @router.get("/conversations", response_model=List[ConversationListItem])
 async def get_user_conversations(current_user: dict = Depends(get_current_user)):
-    """
-    Get all conversations for the current user
-    Returns list sorted by most recent message
-    """
     try:
         user_id = current_user['uid']
-
-        # Query conversations where user is a participant
-        query = conversations_collection.where(
-            filter=google.cloud.firestore.FieldFilter(
-                f"participants.{user_id}", "==", True
-            )
-        ).order_by("lastMessageTime", direction=google.cloud.firestore.Query.DESCENDING)
-
+        
+        # Alternative query approach
+        all_conversations = conversations_collection.stream()
+        
         conversations = []
-        for doc in query.stream():
+        for doc in all_conversations:
             data = doc.to_dict()
-            
-            # Get other participant's details
             participants = data.get("participants", {})
-            other_user_id = None
-            for participant_id in participants.keys():
-                if participant_id != user_id:
-                    other_user_id = participant_id
-                    break
-
-            if not other_user_id:
-                continue
-
-            participant_details = data.get("participantDetails", {})
-            other_user = participant_details.get(other_user_id, {})
-
-            # Format timestamp
-            last_message_time = data.get("lastMessageTime")
-            formatted_time = None
-            if last_message_time:
-                try:
-                    formatted_time = last_message_time.isoformat()
-                except:
-                    formatted_time = str(last_message_time)
-
-            conversations.append(ConversationListItem(
-                conversation_id=doc.id,
-                other_user_id=other_user_id,
-                other_user_name=other_user.get("name", "Unknown"),
-                other_user_avatar=other_user.get("avatar", ""),
-                other_user_role=other_user.get("role", ""),
-                last_message=data.get("lastMessage", ""),
-                last_message_time=formatted_time,
-                unread_count=data.get("unreadCount", {}).get(user_id, 0),
-                is_last_message_mine=data.get("lastMessageSender") == user_id
-            ))
-
+            
+            # Check if current user is a participant
+            if user_id in participants:
+                # Get other participant
+                other_user_id = None
+                for pid in participants.keys():
+                    if pid != user_id:
+                        other_user_id = pid
+                        break
+                
+                if other_user_id:
+                    participant_details = data.get("participantDetails", {})
+                    other_user = participant_details.get(other_user_id, {})
+                    
+                    # Handle timestamp safely
+                    last_message_time = data.get("lastMessageTime")
+                    formatted_time = None
+                    if hasattr(last_message_time, 'isoformat'):
+                        formatted_time = last_message_time.isoformat()
+                    elif last_message_time:
+                        formatted_time = str(last_message_time)
+                    
+                    conversations.append(ConversationListItem(
+                        conversation_id=doc.id,
+                        other_user_id=other_user_id,
+                        other_user_name=other_user.get("name", "Unknown User"),
+                        other_user_avatar=other_user.get("avatar", ""),
+                        other_user_role=other_user.get("role", "user"),
+                        last_message=data.get("lastMessage", "No messages yet"),
+                        last_message_time=formatted_time,
+                        unread_count=data.get("unreadCount", {}).get(user_id, 0),
+                        is_last_message_mine=data.get("lastMessageSender") == user_id
+                    ))
+        
+        # Sort by last message time manually
+        conversations.sort(key=lambda x: x.last_message_time or "", reverse=True)
+        
         return conversations
-
+        
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching conversations: {str(e)}"
-        )
-
+        print(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/conversations/{conversation_id}")
 async def get_conversation_details(
