@@ -1,3 +1,4 @@
+from datetime import datetime
 from fastapi import HTTPException, UploadFile
 from app.database.connection import category_collection, destination_collection
 from app.utils.storage_handle import upload_file_to_storage, delete_file_from_storage
@@ -107,7 +108,19 @@ def add_destination_record(destination_data: dict, images=None):
         "description": description,
         "destination_image": image_urls,
         "image_phash": phash_list,
-        "category_name": category_name.strip()
+        "category_name": category_name.strip(),
+        "average_rating": 0.0,
+        "total_reviews": 0,
+        "rating_breakdown": {
+            "1": 0,
+            "2": 0, 
+            "3": 0,
+            "4": 0,
+            "5": 0
+        },
+        "created_at": datetime.now().isoformat(),
+        "updated_at": datetime.now().isoformat()
+        
     }
 
     _, doc_ref = destination_collection.add(record)
@@ -214,7 +227,8 @@ def update_destination_record(
         "description": description,
         "category_name": category_name.strip(),
         "destination_image": current_images,
-        "image_phash": current_phash
+        "image_phash": current_phash,
+        "updated_at": datetime.now().isoformat()
     })
 
     doc_ref.set(current_data, merge=False)

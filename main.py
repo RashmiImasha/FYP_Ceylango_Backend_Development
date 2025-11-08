@@ -13,6 +13,8 @@ from app.routes.emergancy_route import router as emergancy_route
 from app.routes.service_providers.service_providers_route import router as service_providers_route
 from app.routes.service_providers.service_provider_profile_route import router as service_provider_profile_route
 from app.routes.service_providers.event_route import router as event_route
+from app.routes.review_routes import router as review_route
+from app.routes.popular_toprated_routes import router as popular_toprated_route
 
 
 # Create FastAPI app
@@ -37,7 +39,8 @@ app.include_router(emergancy_route, prefix="/emergancy")
 app.include_router(event_route, prefix="/event")
 app.include_router(service_providers_route, prefix="/service_provider")
 app.include_router(service_provider_profile_route, prefix="/service_provider")
-
+app.include_router(review_route, prefix="/review")
+app.include_router(popular_toprated_route, prefix="/review")
 
 @app.get("/")
 def root():

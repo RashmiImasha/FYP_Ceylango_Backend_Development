@@ -31,7 +31,18 @@ def create_destination(
         "longitude": longitude,
         "district_name": district_name,
         "description": description,
-        "category_name": category_name
+        "category_name": category_name,
+
+        # # Initialize rating fields
+        "average_rating": 0.0,
+        "total_reviews": 0,
+        "rating_breakdown": {
+            "5": 0,
+            "4": 0,
+            "3": 0,
+            "2": 0,
+            "1": 0
+        }
     }
     
     record = add_destination_record(destination_data, images=destination_image)
