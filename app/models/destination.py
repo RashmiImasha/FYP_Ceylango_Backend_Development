@@ -1,5 +1,6 @@
+
 from pydantic import BaseModel, ConfigDict
-from typing import Optional, List
+from typing import Dict, Optional, List
 
 class Destination(BaseModel):
     destination_name: str
@@ -11,6 +12,17 @@ class Destination(BaseModel):
     category_name: str
     image_phash: List[str] = None
     district_name_lower: Optional[str] = None
+    average_rating: float = 0.0
+    total_reviews: int = 0
+    rating_breakdown: Dict[str, int] = {
+        "1": 0,
+        "2": 0,
+        "3": 0, 
+        "4": 0,
+        "5": 0
+    }
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
     
 class DestinationOut(Destination):
    id: str

@@ -5,7 +5,7 @@ from firebase_admin import auth
 from app.config.settings import settings
 from app.database.connection import db
 from app.models.user import ServiceProviderApplication
-
+from app.database.connection import profiles_collection, user_collection
 from firebase_admin import exceptions as firebase_exceptions
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import smtplib
@@ -13,8 +13,8 @@ from email.mime.text import MIMEText
 from datetime import datetime
 
 router = APIRouter()
-collection = db.collection("users")
-profiles_collection = db.collection("service_provider_profiles")
+
+
 security = HTTPBearer()
 
 
@@ -22,12 +22,12 @@ security = HTTPBearer()
 async def apply_service_provider(user: ServiceProviderApplication):
     try:
         # Check if email already used in applications
-        existing = collection.where("email", "==", user.email).stream()
+        existing = user_collection.where("email", "==", user.email).stream()
         if any(existing):
             raise HTTPException(status_code=400, detail="Email already used in an application")
 
         # Create user in Firestore
-        doc_ref = collection.document()
+        doc_ref = user_collection.document()
         user_data = {
             "application_id": doc_ref.id,
             "email": user.email,
@@ -58,7 +58,7 @@ async def apply_service_provider(user: ServiceProviderApplication):
 @router.post("/review/{application_id}")
 async def review_service_provider(application_id: str, decision: Literal["Approved", "Rejected"]):
     try:
-        doc_ref = collection.document(application_id)
+        doc_ref = user_collection.document(application_id)
         user_doc = doc_ref.get()
 
         if not user_doc.exists:
@@ -79,7 +79,7 @@ async def review_service_provider(application_id: str, decision: Literal["Approv
             # Generate password reset link
             reset_link = auth.generate_password_reset_link(user_data["email"])
 
-            new_doc_ref = collection.document(user_record.uid)
+            new_doc_ref = user_collection.document(user_record.uid)
             user_data.update({
                 "status": "Approved",
                 "uid": user_record.uid,
@@ -91,6 +91,7 @@ async def review_service_provider(application_id: str, decision: Literal["Approv
             # Create initial profile for service provider
             profile_data = {
                 "uid": user_record.uid,
+                "application_id": application_id,
                 "service_name": user_data.get("service_name"),
                 "service_category": user_data.get("service_category"),
                 "description": user_data.get("description", ""),
@@ -105,6 +106,16 @@ async def review_service_provider(application_id: str, decision: Literal["Approv
                 "profile_images": [],
                 "poster_images": [],
                 "amenities": [],
+                # Initialize rating fields
+        "average_rating": 0.0,
+        "total_reviews": 0,
+        "rating_breakdown": {
+            "5": 0,
+            "4": 0,
+            "3": 0,
+            "2": 0,
+            "1": 0
+        },
                 "is_active": True,
                 "created_at": datetime.now().isoformat(),
                 "updated_at": datetime.now().isoformat()
@@ -137,7 +148,8 @@ async def review_service_provider(application_id: str, decision: Literal["Approv
             return {
                 "message": "Service provider approved and account created",
                 "uid": user_record.uid,
-                "service_category": user_data.get("service_category")
+                "service_category": user_data.get("service_category"),
+                "service_id": application_id
             }
 
         else:  # Rejected
@@ -173,7 +185,7 @@ async def get_all_service_providers(
     Fetch all service providers with optional filters
     """
     try:
-        query = collection.where("role", "==", "service_provider")
+        query = user_collection.where("role", "==", "service_provider")
 
         if status:
             query = query.where("status", "==", status)

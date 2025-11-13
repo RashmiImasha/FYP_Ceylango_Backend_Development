@@ -9,14 +9,16 @@ from app.models.user import (
     UpdateProfileRequest,
    
 )
+from app.utils.crud_utils import get_all
 from app.utils.storage_handle import upload_file_to_storage, delete_file_from_storage
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime
 from pydantic import BaseModel
+from app.database.connection import profiles_collection, user_collection
 
 router = APIRouter()
-profiles_collection = db.collection("service_provider_profiles")
-users_collection = db.collection("users")
+
+
 security = HTTPBearer()
 
 
@@ -59,7 +61,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         decoded_token = auth.verify_id_token(token)
         uid = decoded_token["uid"]
         
-        user_doc = users_collection.document(uid).get()
+        user_doc = user_collection.document(uid).get()
         if not user_doc.exists:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -570,7 +572,7 @@ async def get_service_provider_profile(provider_uid: str):
             raise HTTPException(status_code=404, detail="Service provider is currently inactive")
         
         # Get basic user info
-        user_doc = users_collection.document(provider_uid).get()
+        user_doc = user_collection.document(provider_uid).get()
         if user_doc.exists:
             user_data = user_doc.to_dict()
             profile_data["provider_info"] = {
@@ -587,62 +589,13 @@ async def get_service_provider_profile(provider_uid: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.get("/profiles/all")
-async def get_all_service_providers(
-    service_category: Optional[str] = Query(None),
-    district: Optional[str] = Query(None),
-    active_only: bool = Query(True),
-    limit: int = Query(50, le=100),
-    offset: int = Query(0)
-):
-    """Get all service provider profiles with filters"""
+async def get_all_service_providers():
     try:
-        query = profiles_collection
-        
-        if service_category:
-            query = query.where("service_category", "==", service_category)
-        
-        if district:
-            query = query.where("district", "==", district)
-        
-        if active_only:
-            query = query.where("is_active", "==", True)
-        
-        # Apply pagination
-        docs = query.limit(limit).offset(offset).stream()
-        
-        profiles = []
-        for doc in docs:
-            profile_data = doc.to_dict()
-            profile_data["uid"] = doc.id
-            
-            # Get user info
-            user_doc = users_collection.document(doc.id).get()
-            if user_doc.exists:
-                user_data = user_doc.to_dict()
-                profile_data["provider_name"] = user_data.get("full_name", "")
-            
-            profiles.append(profile_data)
-        
-        return {
-            "count": len(profiles),
-            "profiles": profiles,
-            "pagination": {
-                "limit": limit,
-                "offset": offset,
-                "has_more": len(profiles) == limit
-            },
-            "filters": {
-                "service_category": service_category,
-                "district": district,
-                "active_only": active_only
-            }
-        }
-    
+        return get_all(profiles_collection)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
+    
 
 @router.get("/profiles/search")
 async def search_service_providers(
@@ -673,7 +626,7 @@ async def search_service_providers(
             profile_data = doc.to_dict()
             
             # Get user info
-            user_doc = users_collection.document(doc.id).get()
+            user_doc = user_collection.document(doc.id).get()
             user_data = user_doc.to_dict() if user_doc.exists else {}
             
             # Complete profile data
@@ -753,7 +706,7 @@ async def get_nearby_service_providers(
                 
                 if distance <= radius_km:
                     # Get user info
-                    user_doc = users_collection.document(doc.id).get()
+                    user_doc = user_collection.document(doc.id).get()
                     user_data = user_doc.to_dict() if user_doc.exists else {}
                     
                     # Complete profile with distance
@@ -839,7 +792,7 @@ async def get_providers_by_category(
             profile_data = doc.to_dict()
             
             # Get user info
-            user_doc = users_collection.document(doc.id).get()
+            user_doc = user_collection.document(doc.id).get()
             user_data = user_doc.to_dict() if user_doc.exists else {}
             
             # Build complete provider profile
@@ -927,7 +880,7 @@ async def get_providers_by_district(
         for doc in docs:
             profile_data = doc.to_dict()
             
-            user_doc = users_collection.document(doc.id).get()
+            user_doc = user_collection.document(doc.id).get()
             user_data = user_doc.to_dict() if user_doc.exists else {}
             
             provider_summary = {
