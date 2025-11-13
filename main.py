@@ -1,4 +1,4 @@
-import uvicorn
+import uvicorn, logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -10,13 +10,21 @@ from app.routes.image_route import router as image_route
 from app.routes.emergancy_route import router as emergancy_route
 
 # service_provider routes
-
 from app.routes.service_providers.service_providers_route import router as service_providers_route
 from app.routes.service_providers.service_provider_profile_route import router as service_provider_profile_route
 from app.routes.service_providers.event_route import router as event_route
 from app.routes.review_routes import router as review_route
 from app.routes.popular_toprated_routes import router as popular_toprated_route
 
+logging.basicConfig(
+    level=logging.INFO,  # Set to DEBUG for more detailed logs
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # Print to console
+        logging.FileHandler('app.log')  # Save to file
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # Create FastAPI app
 app = FastAPI(
