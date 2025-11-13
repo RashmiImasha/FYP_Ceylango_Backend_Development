@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from typing import Optional
 
 class Settings(BaseSettings):
     FIREBASE_KEY_PATH: str
@@ -8,6 +9,9 @@ class Settings(BaseSettings):
     
     SMTP_EMAIL: str
     SMTP_PASS: str
+
+    PINECONE_API_KEY: str
+    PINECONE_ENVIRONMENT: Optional[str] = "us-east-1"
 
     class Config:
         env_file = ".env"

@@ -17,7 +17,6 @@ pydantic==2.11.3
 python-dotenv==1.0.1
 pydantic-settings
 
-
 # Development tools (optional)
 httpx==0.28.1
 pytest==8.2.2
@@ -30,21 +29,54 @@ langchain-google-genai
 langchain-core
 pydantic[email]
 
-# ***********************************
-# # Existing dependencies (assumed)
-# fastapi
-# firebase-admin
-# python-multipart
-# pydantic
-# langchain
-# langchain-google-genai
-
-# # New dependencies for RAG + Agent system
-# pinecone-client==3.0.0
+pinecone-client
 # langchain-pinecone==0.1.0
+transformers==4.36.0
+torch==2.1.0
+torchvision==0.16.0
+geopy 
+
+
+
+# *****************************
+
+# # Build essentials
+# Cython
+# setuptools
+# wheel
+# PyYAML>=6.0.1
+
+# # Web Framework
+# fastapi==0.115.2
+# uvicorn>=0.29.0
+
+# # Database
+# firebase-admin==7.1.0
+
+# # Data Validation
+# pydantic==2.11.3
+
+# # Environment Variables
+# python-dotenv==1.0.1
+# pydantic-settings
+
+# # Development tools (optional)
+# httpx==0.28.1
+# pytest==8.2.2
+# python-multipart==0.0.20
+# pillow
+# imagehash
+
+# # AI and Image Processing (Pinned Versions to Avoid Conflicts)
+# langchain==0.1.16
+# langchain-core==0.1.53
+# langchain-google-genai==1.0.3
+# google-generativeai==0.5.4
+# langchain-pinecone==0.1.0
+# pinecone-client==3.2.2
 # transformers==4.36.0
 # torch==2.1.0
 # torchvision==0.16.0
-# Pillow==10.1.0
-# imagehash==4.3.1
-# langchain-community==0.0.20
+
+# # Optional community integrations
+# # langchain-community==0.0.20
