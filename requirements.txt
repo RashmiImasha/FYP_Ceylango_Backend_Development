@@ -30,13 +30,13 @@ langchain-core
 pydantic[email]
 
 pinecone-client
-# langchain-pinecone==0.1.0
 transformers==4.36.0
 torch==2.1.0
 torchvision==0.16.0
 geopy 
 gtts
 deep_translator 
+
 
 
 
