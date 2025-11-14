@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, EmailStr
-from typing import List, Literal, Optional
+from typing import Literal, Optional
 
 class ReviewCreate(BaseModel):
     user_email: EmailStr = Field(..., description="User email for authentication")
@@ -35,3 +35,7 @@ class ReviewResponse(BaseModel):
 
 class HelpfulRequest(BaseModel):
     user_email: EmailStr
+
+# use for content generation - feedback system
+class FeedbackRequest(BaseModel):
+    feedback: str = Field(..., pattern="^(excellent|good|acceptable|poor|incorrect)$")

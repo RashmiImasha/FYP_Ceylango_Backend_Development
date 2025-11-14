@@ -1,13 +1,10 @@
 from pinecone import Pinecone, ServerlessSpec
 from transformers import CLIPProcessor, CLIPModel
-import torch
+import torch, io, requests, logging
 from PIL import Image
-import io
-import requests
 from typing import List, Dict, Optional
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from app.config.settings import settings
-import logging
 
 logger = logging.getLogger(__name__)
 

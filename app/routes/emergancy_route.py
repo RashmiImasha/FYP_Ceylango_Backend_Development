@@ -1,10 +1,12 @@
 from fastapi import APIRouter, HTTPException, status, Query
 from app.models.emergancy import EmergancyContact, EmergancyContactResponse, EmergancyNearest
 from app.database.connection import emergancy_collection
-from app.utils.destinationUtils import haversine
+from app.utils.crud_utils import CrudUtils
 from typing import Union
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 max_distance_km = 50
 
@@ -23,6 +25,8 @@ def add_eContact(contact: EmergancyContact):
     data = contact.dict()
     data["id"] = doc_ref.id
     doc_ref.set(data)
+
+    logger.info(f"Added emergency contact for district: {contact.police_district}, ID: {doc_ref.id}")
     return {
         "message": "Emergency contact added successfully!",
         "data": EmergancyContact(**data)
@@ -52,7 +56,8 @@ def update_eContact(
     
     data = updated_contact.dict()
     data['id'] = contact_id
-    doc_ref.update(data)    
+    doc_ref.update(data)   
+    logger.info(f"Updated emergency contact for district: {updated_contact.police_district}, ID: {contact_id}") 
     return {
         "message": "Emergency contact details updated successfully!",
         "data": updated_contact
@@ -69,6 +74,7 @@ def get_eContact_byId( contact_id: str ):
     
     eContact_details = eContact.to_dict()
     eContact_details['id'] = eContact.id
+    logger.info(f"Retrieved emergency contact for ID: {contact_id}")
     return eContact_details
  
 # get all eContact data
@@ -81,6 +87,7 @@ def get_all_eContact():
         data = doc.to_dict()
         data['id'] = doc.id
         result.append(data)
+    logger.info("Retrieved all emergency contacts")
     return result
 
 # delete eContact data
@@ -93,6 +100,7 @@ def delete_eContact(contact_id: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contact details not found!")
     
     doc_ref.delete()
+    logger.info(f"Deleted emergency contact for ID: {contact_id}")
     return {
         "message": "Destination deleted successfully",
         "contact_id": contact_id,
@@ -114,7 +122,7 @@ def get_nearest_eContact(
         contact_lat = data["police_latitude"]
         contact_lon = data["police_longitude"]
 
-        distance_m = haversine(user_lat, user_lon, contact_lat, contact_lon)
+        distance_m = CrudUtils.haversine(user_lat, user_lon, contact_lat, contact_lon)
         distance_km = distance_m / 1000
 
         if distance_km < min_distance:
@@ -126,10 +134,16 @@ def get_nearest_eContact(
             contact_within_range.append(contact_data)
 
     if contact_within_range:
-        contact_within_range.sort(key=lambda c: c["distance_km"])
-        return contact_within_range
+        contact_within_range.sort(key=lambda c: c["distance_km"])     
+        logger.info("Retrieved nearest emergency contact based on user location")   
+        return contact_within_range    
+
     elif nearest_eContact:
+        logger.info("Retrieved nearest emergency contact based on user location")
         return nearest_eContact
     else:
+        logger.warning("No emergency contacts found in the database")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUN, detail="No emergency contacts found")
+
+
 

@@ -16,6 +16,7 @@ pydantic==2.11.3
 # Environment Variables
 python-dotenv==1.0.1
 pydantic-settings
+pydantic[email]
 
 # Development tools (optional)
 httpx==0.28.1
@@ -27,16 +28,16 @@ imagehash
 # AI and Image Processing
 langchain-google-genai
 langchain-core
-pydantic[email]
-
 pinecone-client
-# langchain-pinecone==0.1.0
 transformers==4.36.0
 torch==2.1.0
 torchvision==0.16.0
 geopy 
+
+# Translation and Text-to-Speech
 gtts
 deep_translator 
+
 
 
 

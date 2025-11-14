@@ -1,13 +1,13 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from firebase_admin import storage
-import uuid
+import uuid, logging
 from app.database.connection import category_collection
 from app.models.category import CategoryOut
 from typing import Optional
 from urllib.parse import urlparse
 
-# create router for category routes
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # add category
 @router.post("/", response_model=CategoryOut)
@@ -45,6 +45,7 @@ def create_category(
     
     doc_ref = category_collection.document(category_id)
     doc_ref.set(category_data)
+    logger.info(f"Category created with ID: {category_id} Name: {category_name}")
     return {"message": "Category added successfully...!", "category_id": category_id, **category_data}
 
 # delete category
@@ -70,6 +71,7 @@ def delete_category(category_id: str):
             image_delete = True
     
     doc_ref.delete()
+    logger.info(f"Category deleted with ID: {category_id}")
     return {
         "message": "Category is deleted successfully",
         "category_id": category_id,
@@ -127,7 +129,7 @@ def update_category(
 
     
     doc_ref.update(category_data)
-    
+    logger.info(f"Category updated with ID: {category_id} Name: {category_name}")    
     return {"message": "Category updated successfully", "category_id": category_id, **category_data}
 
 # get all categories
@@ -141,7 +143,9 @@ def get_all_categories():
         category_data['category_id'] = doc.id
         categories.append(category_data)
     
+    logger.info(f"Retrieved all categories, count: {len(categories)}")    
     return categories
+
 
 # get category by id
 @router.get("/{category_id}", response_model=CategoryOut)
@@ -154,6 +158,7 @@ def get_category_by_id(category_id: str):
     
     category_data = category.to_dict()
     category_data['category_id'] = category.id
+    logger.info(f"Retrieved category with ID: {category_id}")
     return category_data
 
 # get categories by type
@@ -166,6 +171,8 @@ def get_categories_by_type(category_type: str):
         category_data = doc.to_dict()
         category_data['category_id'] = doc.id
         categories.append(category_data)
+        
+    logger.info(f"Retrieved categories with type: {category_type}, count: {len(categories)}")
     
     if not categories:
         raise HTTPException(status_code=404, detail="No categories found for this type")

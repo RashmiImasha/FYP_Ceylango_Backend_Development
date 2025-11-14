@@ -1,18 +1,19 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from firebase_admin import storage
-from app.database.connection import misplace_collection
+from app.database.connection import misplace_collection, feedback_collection
 from app.services.agent import get_agent_service
 from app.services.pineconeService import get_pinecone_service
-from app.utils.destinationUtils import compute_phash
-from app.utils.storage_handle import move_files_to_new_folder
-from app.utils.crud_utils import get_all, get_by_id, delete_by_id
+from app.utils.crud_utils import CrudUtils
 from app.models.destination import MissingPlaceOut
+from app.models.review import FeedbackRequest
 from deep_translator import GoogleTranslator 
 from gtts import gTTS
 from PIL import Image
 import uuid, io, logging, time, base64
 from typing import Optional, List
+from datetime import datetime, timedelta
+from google.cloud import firestore
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -20,6 +21,10 @@ router = APIRouter()
 agent_service = get_agent_service()
 pinecone_service = get_pinecone_service()
 translator = GoogleTranslator()
+
+# ****************************************************
+#  Content Generation routes
+# ****************************************************
 
 SUPPORTED_LANGUAGES = {
     "english": {"code": "en", "name": "English"},
@@ -33,34 +38,6 @@ SUPPORTED_LANGUAGES = {
     "spanish": {"code": "es", "name": "Spanish (Español)"},
     "korean": {"code": "ko", "name": "Korean (한국어)"}
 }
-
-# @router.post("/uploadImage")
-# async def analyze_image(file: UploadFile = File(...)):
-#     try:
-#         # Read and process image
-#         image_bytes = await file.read()
-#         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-
-#         # Use agent for identification (no GPS)
-#         gps_location = {"lat": None, "lng": None}
-#         agent_result = await agent_service.identify_and_generate_content(
-#             image=image,
-#             gps_location=gps_location
-#         )
-
-#         if not agent_result.get("success"):
-#             raise HTTPException(
-#                 status_code=500,
-#                 detail=f"Agent failed: {agent_result.get('error')}"
-#             )
-
-#         return agent_result
-
-#     except Exception as e:
-#         raise HTTPException(
-#             status_code=500,
-#             detail=f"An error occurred while processing the image: {str(e)}"
-#         )
 
 @router.post("/snapImage")
 async def snap_image_with_agent(
@@ -100,7 +77,7 @@ async def snap_image_with_agent(
 
         if not found_in_db or used_web_search:
 
-            image_phash = compute_phash(io.BytesIO(image_bytes))
+            image_phash = CrudUtils.compute_phash(io.BytesIO(image_bytes))
 
             # Save to missingplace collection for admin review
             destination_data = {
@@ -302,10 +279,102 @@ async def translate_and_speak(
         logger.error(f"[{request_id}] Unexpected error in translateAndSpeak: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-# ********missing-place management routes********
+@router.post("/addFeedback")
+def add_feedback(data: FeedbackRequest):
+    try:
+        record = {
+            "feedback": data.feedback,
+            "created_at": firestore.SERVER_TIMESTAMP
+        }
+        
+        _, doc_ref = feedback_collection.add(record)
+        record["id"] = doc_ref.id
+
+        logger.info(f"Feedback submitted successfully...! ID: {record['id']}")
+        return {
+            "message": "Feedback submitted successfully...!",
+            "data": record["feedback"]
+        }
+
+    except Exception as e:
+        logger.error(f"Error submitting feedback: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/feedbackAnalytics")
+async def get_feedback_analytics(days: int = 30):
+    try:
+        # Time window
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=days)
+
+        # Fetch all feedback
+        docs = (
+            feedback_collection
+            .where("created_at", ">=", start_date)
+            .where("created_at", "<=", end_date)
+            .stream()
+        )
+
+        # Base counters
+        distribution = {
+            "excellent": 0,
+            "good": 0,
+            "acceptable": 0,
+            "poor": 0,
+            "incorrect": 0
+        }
+
+        timeseries = {}
+
+        for doc in docs:
+            data = doc.to_dict()
+            fb = data.get("feedback")
+            created_at = data.get("created_at")
+
+            # Update distribution
+            if fb in distribution:
+                distribution[fb] += 1
+
+            # Update timeseries
+            if created_at:
+                if hasattr(created_at, "to_datetime"):
+                    created_at = created_at.to_datetime()
+
+                date_key = created_at.strftime("%Y-%m-%d")
+
+                if date_key not in timeseries:
+                    timeseries[date_key] = {
+                        "excellent": 0,
+                        "good": 0,
+                        "acceptable": 0,
+                        "poor": 0,
+                        "incorrect": 0
+                    }
+
+                if fb in timeseries[date_key]:
+                    timeseries[date_key][fb] += 1
+            
+        total_count = sum(distribution.values())
+
+        logger.info("Feedback analytics fetched successfully")
+        return {
+            "distribution": distribution,
+            "timeseries": timeseries,
+            "total_count": total_count
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching feedback analytics: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ****************************************************
+#  missing-place management routes
+# ****************************************************
 
 @router.post("/moveToDestination")
 def move_missing_to_destination(missingplace_id: str):
+    
     """Move from missingplace to destination collection and sync to Pinecone"""
     
     doc_ref = misplace_collection.document(missingplace_id)
@@ -318,22 +387,33 @@ def move_missing_to_destination(missingplace_id: str):
     try:
         # Move images to destination folder
         if "destination_image" in data and data["destination_image"]:
-            new_image_urls = move_files_to_new_folder(
+            local_paths = CrudUtils.move_files_to_new_folder(
                 urls=data["destination_image"],
                 source_folder="missingplace_images",
                 target_folder="destination_images"
             )
+
+            # Upload the files to GCS (or storage) to get accessible URLs
+            new_image_urls = []
+            for local_path in local_paths:
+                uploaded_url = CrudUtils.upload_file_to_storage(local_path, "destination_images")
+                new_image_urls.append(uploaded_url)
+            
+            # Update data with uploaded URLs
             data["destination_image"] = new_image_urls
+            
 
         # Add to destination collection (which now syncs to Pinecone)
-        from app.utils.destinationUtils import add_destination_record
-        record = add_destination_record(data, images=None)
+        record = CrudUtils.add_destination_record(data, images=None)
+        logger.info(f"Moved missing place to destination collection : ID {record['id']}")
         
         # Sync to Pinecone
         pinecone_service.upsert_destination(record['id'], record)
+        logger.info(f"Synced record to Pinecone: ID {record['id']}")
         
         # Delete from missingplace
         doc_ref.delete()
+        logger.info(f"Deleted from missing place collection: ID {missingplace_id}")
         
         return {
             "message": "Moved to destination and synced to Pinecone",
@@ -346,18 +426,18 @@ def move_missing_to_destination(missingplace_id: str):
 
 @router.get("/{missing_id}")
 def get_missing(missing_id: str):
-    return get_by_id(misplace_collection, missing_id)
+    return CrudUtils.get_by_id(misplace_collection, missing_id)
 
 @router.get("/")
 def get_all_missing():
-    return get_all(misplace_collection)
+    return CrudUtils.get_all(misplace_collection)
 
 @router.delete("/{missing_id}")
 def delete_missing(missing_id: str):
     files_mapping = {
         "destination_image": "missingplace_images",
     }
-    return delete_by_id(misplace_collection, missing_id, files_mapping)
+    return CrudUtils.delete_by_id(misplace_collection, missing_id, files_mapping)
 
 @router.put("/{missing_id}", response_model=MissingPlaceOut)
 def update_misplace(
@@ -371,11 +451,9 @@ def update_misplace(
     new_images: Optional[List[UploadFile]] = File(None),
     remove_existing: Optional[List[str]] = Form(None)
 ):
-    """Update missingplace entry"""
-    from app.utils.destinationUtils import update_destination_record
     
     doc_ref = misplace_collection.document(misplace_id)
-    return update_destination_record(
+    return CrudUtils.update_destination_record(
         doc_ref=doc_ref,
         destination_id=misplace_id,
         collection=misplace_collection,   
