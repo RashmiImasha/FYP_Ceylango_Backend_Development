@@ -2,6 +2,9 @@ from fastapi import APIRouter, Query, HTTPException  # Fixed import
 from app.database.connection import db
 from datetime import datetime, timedelta
 from typing import Literal, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -90,7 +93,7 @@ async def get_popular_destinations(
         
         # Sort by popularity score
         popular_list.sort(key=lambda x: x["popularity_score"], reverse=True)
-        
+        logger.info(f"Fetched popular destinations, total found: {len(popular_list)}")        
         return {
             "count": min(len(popular_list), limit),
             "destinations": popular_list[:limit],
@@ -98,6 +101,7 @@ async def get_popular_destinations(
         }
     
     except Exception as e:
+        logger.error(f"Error fetching popular destinations: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -132,6 +136,7 @@ async def get_top_rated_destinations(
         
         # Sort by weighted rating
         rated_list.sort(key=lambda x: (x["weighted_rating"], x["total_reviews"]), reverse=True)
+        logger.info(f"Fetched top-rated destinations, total found: {len(rated_list)}")
         
         return {
             "count": min(len(rated_list), limit),
@@ -140,6 +145,7 @@ async def get_top_rated_destinations(
         }
     
     except Exception as e:
+        logger.error(f"Error fetching top-rated destinations: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -197,6 +203,7 @@ async def get_trending_destinations(
         
         # Sort by trending score
         trending_list.sort(key=lambda x: x["trending_score"], reverse=True)
+        logger.info(f"Fetched trending destinations, total found: {len(trending_list)}")
         
         return {
             "count": min(len(trending_list), limit),
@@ -205,6 +212,7 @@ async def get_trending_destinations(
         }
     
     except Exception as e:
+        logger.error(f"Error fetching trending destinations: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -244,6 +252,7 @@ async def get_top_rated_services(
         
         # Sort by weighted rating
         rated_list.sort(key=lambda x: (x["weighted_rating"], x["total_reviews"]), reverse=True)
+        logger.info(f"Fetched top-rated services, total found: {len(rated_list)}")
         
         return {
             "count": min(len(rated_list), limit),
@@ -255,6 +264,7 @@ async def get_top_rated_services(
         }
     
     except Exception as e:
+        logger.error(f"Error fetching top-rated services: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -311,7 +321,7 @@ async def get_popular_services(
             popular_list.append(service_data)
         
         popular_list.sort(key=lambda x: x["popularity_score"], reverse=True)
-        
+        logger.info(f"Fetched popular services, total found: {len(popular_list)}")
         return {
             "count": min(len(popular_list), limit),
             "services": popular_list[:limit],
@@ -321,6 +331,7 @@ async def get_popular_services(
         }
     
     except Exception as e:
+        logger.error(f"Error fetching popular services: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -334,6 +345,7 @@ async def get_destination_rating_stats(destination_id: str):
             raise HTTPException(status_code=404, detail="Destination not found")
         
         dest_data = dest_doc.to_dict()
+        logger.info(f"Fetched rating stats for destination ID: {destination_id}")
         
         return {
             "destination_id": destination_id,
@@ -348,6 +360,7 @@ async def get_destination_rating_stats(destination_id: str):
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error fetching destination rating stats: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -361,6 +374,7 @@ async def get_service_rating_stats(service_id: str):
             raise HTTPException(status_code=404, detail="Service not found")
         
         service_data = service_doc.to_dict()
+        logger.info(f"Fetched rating stats for service ID: {service_id}")
         
         return {
             "service_id": service_id,
@@ -375,4 +389,5 @@ async def get_service_rating_stats(service_id: str):
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error fetching service rating stats: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

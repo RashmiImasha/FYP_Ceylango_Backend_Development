@@ -1,22 +1,19 @@
-from typing import Optional, Dict, Any
+from typing import Optional
 from typing_extensions import Literal
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException
 from firebase_admin import auth
 from app.config.settings import settings
-from app.database.connection import db
 from app.models.user import ServiceProviderApplication
 from app.database.connection import profiles_collection, user_collection
 from firebase_admin import exceptions as firebase_exceptions
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-import smtplib
+import smtplib, logging
 from email.mime.text import MIMEText
 from datetime import datetime
 
 router = APIRouter()
-
-
 security = HTTPBearer()
-
+logger = logging.getLogger(__name__)
 
 @router.post("/apply")
 async def apply_service_provider(user: ServiceProviderApplication):
@@ -24,6 +21,7 @@ async def apply_service_provider(user: ServiceProviderApplication):
         # Check if email already used in applications
         existing = user_collection.where("email", "==", user.email).stream()
         if any(existing):
+            logger.info(f"Email already used in an application: {user.email}")
             raise HTTPException(status_code=400, detail="Email already used in an application")
 
         # Create user in Firestore
@@ -44,7 +42,7 @@ async def apply_service_provider(user: ServiceProviderApplication):
         }
 
         doc_ref.set(user_data)
-
+        logger.info(f"Service provider application submitted: {user.email}, Application ID: {doc_ref.id}")
         return {
             "message": "Service provider application submitted successfully",
             "application_id": doc_ref.id,
@@ -53,6 +51,7 @@ async def apply_service_provider(user: ServiceProviderApplication):
         }
 
     except Exception as e:
+        logger.error(f"Error submitting service provider application: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/review/{application_id}")
@@ -62,6 +61,7 @@ async def review_service_provider(application_id: str, decision: Literal["Approv
         user_doc = doc_ref.get()
 
         if not user_doc.exists:
+            logger.warning(f"Service provider application not found: {application_id}")
             raise HTTPException(status_code=404, detail="Application not found")
 
         user_data = user_doc.to_dict()
@@ -145,6 +145,7 @@ async def review_service_provider(application_id: str, decision: Literal["Approv
                 """
             )
 
+            logger.info(f"Service provider application approved: {user_data['email']}, UID: {user_record.uid}")
             return {
                 "message": "Service provider approved and account created",
                 "uid": user_record.uid,
@@ -169,10 +170,11 @@ async def review_service_provider(application_id: str, decision: Literal["Approv
                 Tourist App Team
                 """
             )
-
+            logger.info(f"Service provider application rejected: {user_data['email']}, Application ID: {application_id}")
             return {"message": "Service provider application rejected"}
 
     except Exception as e:
+        logger.error(f"Error reviewing service provider application {application_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/")
@@ -215,7 +217,8 @@ async def get_all_service_providers(
                 "applied_at": data.get("applied_at"),
                 "approved_at": data.get("approved_at")
             })
-
+        
+        logger.info(f"Fetched {len(providers)} service providers with filters - Status: {status}, Category: {service_category}, District: {district}")
         return {
             "count": len(providers), 
             "service_providers": providers,
@@ -227,6 +230,7 @@ async def get_all_service_providers(
         }
 
     except Exception as e:
+        logger.error(f"Error fetching service providers: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -238,7 +242,8 @@ def send_email(to_email: str, subject: str, body: str):
     sender_password = settings.SMTP_PASS
 
     if not sender_email or not sender_password:
-        raise Exception("SMTP credentials not configured")
+        logger.error("SMTP credentials not configured")
+        raise Exception("[send_email] SMTP credentials not configured")
 
     try:
         msg = MIMEText(body)
@@ -250,5 +255,8 @@ def send_email(to_email: str, subject: str, body: str):
             server.starttls()
             server.login(sender_email, sender_password)
             server.sendmail(sender_email, to_email, msg.as_string())
+
+        logger.info(f"[send_email] Email successfully sent to {to_email} with subject '{subject}'")
     except Exception as e:
-        print(f"❌ Email sending failed: {e}")  # log error but don't block approval
+        logger.error(f"[send_email] Failed to send email to {to_email}: {str(e)}", exc_info=True)
+        

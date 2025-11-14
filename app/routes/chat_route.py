@@ -1,5 +1,3 @@
-# app/routes/chat.py
-
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from firebase_admin import auth, messaging
@@ -12,6 +10,9 @@ from app.models.chat import (
 )
 from typing import List
 import google.cloud.firestore
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 security = HTTPBearer()
@@ -28,6 +29,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         decoded_token = auth.verify_id_token(credentials.credentials)
         return decoded_token
     except Exception as e:
+        logger.error(f"Invalid authentication credentials: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
@@ -48,6 +50,7 @@ async def create_conversation(
     try:
         # Verify user is one of the participants
         if current_user['uid'] not in [request.tourist_id, request.provider_id]:
+            logger.warning(f"User {current_user['uid']} attempted to create conversation without being a participant")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You can only create conversations you're part of"
@@ -133,7 +136,7 @@ async def create_conversation(
         }
 
         conversation_ref.set(conversation_data)
-
+        logger.info(f"Created new conversation {conversation_ref.id} between {request.tourist_id} and {request.provider_id}")
         return ConversationResponse(
             conversation_id=conversation_ref.id,
             exists=False,
@@ -144,6 +147,7 @@ async def create_conversation(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error creating conversation: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating conversation: {str(e)}"
@@ -198,11 +202,11 @@ async def get_user_conversations(current_user: dict = Depends(get_current_user))
         
         # Sort by last message time manually
         conversations.sort(key=lambda x: x.last_message_time or "", reverse=True)
-        
+        logger.info(f"Fetched {len(conversations)} conversations for user {user_id}")        
         return conversations
         
     except Exception as e:
-        print(f"Error: {e}")
+        logger.error(f"Error: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -236,7 +240,8 @@ async def get_conversation_details(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You are not a participant in this conversation"
             )
-
+        
+        logger.info(f"User {user_id} fetched details for conversation {conversation_id}")
         return {
             "conversation_id": conversation_id,
             **conversation_data
@@ -245,6 +250,7 @@ async def get_conversation_details(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error fetching conversation: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching conversation: {str(e)}"
@@ -275,7 +281,7 @@ async def update_user_status(
             update_data["fcmToken"] = status_update.fcm_token
 
         user_ref.update(update_data)
-
+        logger.info(f"Updated status for user {user_id} to {'online' if status_update.online else 'offline'}")
         return {
             "success": True, 
             "online": status_update.online,
@@ -283,6 +289,7 @@ async def update_user_status(
         }
 
     except Exception as e:
+        logger.error(f"Error updating status for user {current_user['uid']}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error updating status: {str(e)}"
@@ -294,6 +301,7 @@ async def update_user_status(
 @router.get("/health")
 async def chat_health_check():
     """Check if chat service is running"""
+    logger.info("Chat health check endpoint called")
     return {
         "status": "healthy",
         "service": "chat",

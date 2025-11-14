@@ -1,12 +1,10 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query, BackgroundTasks
 from app.models.destination import DestinationOut
-from app.utils.crud_utils import get_all, get_by_id, delete_by_id
-from app.utils.destinationUtils import add_destination_record, update_destination_record
+from app.utils.crud_utils import CrudUtils
 from app.database.connection import destination_collection
 from typing import Optional, List
-import requests
+import requests, logging
 from app.services.pineconeService import get_pinecone_service
-import logging
 
 logger = logging.getLogger(__name__)
 OSRM_BASE_URL = "http://router.project-osrm.org"
@@ -63,7 +61,7 @@ def create_destination(
         }
     }
     
-    record = add_destination_record(destination_data, images=destination_image)
+    record = CrudUtils.add_destination_record(destination_data, images=destination_image)
 
     background_tasks.add_task(
         sync_to_pinecone_background,
@@ -76,7 +74,7 @@ def create_destination(
 # get destinations by id
 @router.get("/{destination_id}")
 def get_destination_byId(destination_id: str):
-    return get_by_id(destination_collection, destination_id)
+    return CrudUtils.get_by_id(destination_collection, destination_id)
 
 # update destination by id
 @router.put("/{destination_id}", response_model=DestinationOut)
@@ -93,10 +91,10 @@ def update_destination(
     remove_existing: Optional[List[str]] = Form(None)
 ):
     doc_ref = destination_collection.document(destination_id)
-    updated_record = update_destination_record(
+    updated_record = CrudUtils.update_destination_record(
         doc_ref=doc_ref,
         destination_id=destination_id,
-        collection=destination_collection,   # 🔹 pass destination collection
+        collection=destination_collection,   
         destination_name=destination_name,
         latitude=latitude,
         longitude=longitude,
@@ -125,7 +123,7 @@ def delete_destination(
         "destination_image": "destination_images",
     }
 
-    result = delete_by_id(destination_collection, destination_id, files_mapping)
+    result = CrudUtils.delete_by_id(destination_collection, destination_id, files_mapping)
     background_tasks.add_task(
         delete_from_pinecone_background,
         destination_id
@@ -136,7 +134,7 @@ def delete_destination(
 # get all destinations
 @router.get("/")
 def get_all_destinations():
-    return get_all(destination_collection)
+    return CrudUtils.get_all(destination_collection)
 
 # get destination by district name
 @router.get("/district/{district_name}", response_model=list[DestinationOut])
@@ -152,7 +150,10 @@ def get_destination_byDistrict(district_name: str):
         data["id"] = doc.id
         result.append(data)
     
+    logger.info(f"Fetched {len(result)} destinations for district '{district_name}'")    
+
     if not result:
+        logger.warning(f"No destinations found in district '{district_name}'")
         raise HTTPException(status_code=404, detail=f"No destinations found in district '{district_name}'")
 
     return result
@@ -171,7 +172,7 @@ def get_osrm_distance(lat1, lon1, lat2, lon2):
         else:
             return None, None
     except Exception as e:
-        print(f"OSRM error: {e}")
+        logger.error(f"OSRM error: {e}")
         return None, None
 
 @router.get("/near/nearby", response_model=list[dict])
@@ -203,8 +204,10 @@ def get_nearBy(
                     result.append(data)
 
     result.sort(key=lambda x: x['distance'])  # sort by closest first
+    logger.info(f"Found {len(result)} destinations within {radius_range} km radius")
 
     if not result:
+        logger.warning(f"No destinations found within {radius_range} km radius")
         raise HTTPException(status_code=404, detail=f"No destinations found within {radius_range} km.")
 
     return result
@@ -233,10 +236,12 @@ async def bulk_sync_to_pinecone(background_tasks: BackgroundTasks):
             )
             count += 1
         
+        logger.info(f"Queued {count} destinations for Pinecone sync")        
         return {
             "message": f"Queued {count} destinations for Pinecone sync...",
             "status": "processing_in_background"
         }
     
     except Exception as e:
+        logger.error(f"Bulk sync to Pinecone failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Bulk sync failed: {str(e)}")

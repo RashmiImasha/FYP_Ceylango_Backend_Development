@@ -1,12 +1,13 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Query, Body
+from fastapi import APIRouter, HTTPException, status, Query
 from firebase_admin import auth
 from app.database.connection import destination_collection, reviews_collection, profiles_collection, user_collection
-from app.models.review import HelpfulRequest, ReviewCreate, ReviewUpdate, ReviewResponse
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from app.models.review import HelpfulRequest, ReviewCreate, ReviewUpdate
+from fastapi.security import HTTPBearer
 from datetime import datetime
 from typing import Optional, List, Literal
-import uuid
+import uuid, logging
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 security = HTTPBearer()
 
@@ -20,17 +21,20 @@ async def get_current_user_by_email(user_email: str):
         user_list = list(users)
         
         if not user_list:
+            logger.warning(f"User not found. Please register first. Email: {user_email}")
             raise HTTPException(status_code=404, detail="User not found. Please register first.")
         
         user_doc = user_list[0]
         user_data = user_doc.to_dict()
         uid = user_doc.id
-        
+
+        logger.info(f"Authenticated user by email: {user_email}, UID: {uid}")        
         return uid, user_data
         
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Authentication error for email {user_email}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Authentication error: {str(e)}")
 
 
@@ -47,6 +51,7 @@ def verify_reviewable_exists(reviewable_type: str, reviewable_id: str):
         if not doc.exists:
             raise HTTPException(status_code=404, detail="Service provider not found")
     else:
+        logger.warning(f"Invalid reviewable type: {reviewable_type}")
         raise HTTPException(status_code=400, detail="Invalid reviewable type")
 
 
@@ -95,11 +100,11 @@ def update_aggregated_ratings(reviewable_type: str, reviewable_id: str):
             "rating_breakdown": rating_counts,
             "updated_at": datetime.now().isoformat()
         })
-        
+        logger.info(f"Updated aggregated ratings for {reviewable_type} ID {reviewable_id}: Avg Rating {avg_rating}, Total Reviews {total_reviews}")
         return avg_rating, total_reviews
     
     except Exception as e:
-        print(f"Error updating aggregated ratings: {str(e)}")
+        logger.error(f"Error updating aggregated ratings: {str(e)}")
         # Don't fail the main operation if rating update fails
         return None, None
 
@@ -115,6 +120,7 @@ async def create_review(
         
         # Validate reviewable exists
         verify_reviewable_exists(review_data.reviewable_type, review_data.reviewable_id)
+        
         
         # Check if user already reviewed
         if check_existing_review(uid, review_data.reviewable_type, review_data.reviewable_id):
@@ -149,6 +155,7 @@ async def create_review(
         update_aggregated_ratings(review_data.reviewable_type, review_data.reviewable_id)
         
         review_doc_data["id"] = review_id
+        logger.info(f"Created new review ID {review_id} by user {uid} for {review_data.reviewable_type} ID {review_data.reviewable_id}")
         return {
             "message": "Review created successfully",
             "review": review_doc_data
@@ -157,7 +164,7 @@ async def create_review(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error creating review: {str(e)}")
+        logger.error(f"Error creating review: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     
 
@@ -172,12 +179,14 @@ async def get_review(review_id: str):
         
         review_data = review_doc.to_dict()
         review_data["id"] = review_id
-        
+
+        logger.info(f"Fetched review ID {review_id}")        
         return {"review": review_data}
     
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error fetching review ID {review_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -229,7 +238,8 @@ async def update_review(
         # Get updated review
         updated_review = review_doc.get().to_dict()
         updated_review["id"] = review_id
-        
+
+        logger.info(f"Updated review ID {review_id} by user {uid}")        
         return {
             "message": "Review updated successfully",
             "review": updated_review
@@ -238,6 +248,7 @@ async def update_review(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error updating review ID {review_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -270,12 +281,13 @@ async def delete_review(
             review_data.get("reviewable_type"),
             review_data.get("reviewable_id")
         )
-        
+        logger.info(f"Deleted review ID {review_id} by user {uid}")
         return {"message": "Review deleted successfully"}
     
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error deleting review ID {review_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/reviews/{review_id}/helpful")
@@ -311,7 +323,7 @@ async def mark_review_helpful(
             "helpful_count": len(helpful_by),
             "updated_at": datetime.now().isoformat()
         })
-        
+        logger.info(f"User {uid} toggled helpful vote on review ID {review_id}")
         return {
             "message": message,
             "helpful_count": len(helpful_by)
@@ -320,7 +332,10 @@ async def mark_review_helpful(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error marking review ID {review_id} as helpful: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+    
+
 @router.get("/destinations/{destination_id}/reviews")
 async def get_destination_reviews(
     destination_id: str,
@@ -384,7 +399,8 @@ async def get_destination_reviews(
                 "1": rating_breakdown.get("1", 0),  # Terrible
             }
         }
-        
+
+        logger.info(f"Fetched reviews for destination ID {destination_id} with {len(paginated_reviews)} reviews returned")        
         return {
             "rating_summary": rating_summary,
             "total_count": total_count,
@@ -400,6 +416,7 @@ async def get_destination_reviews(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error fetching reviews for destination ID {destination_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     
     
@@ -445,6 +462,7 @@ async def get_service_reviews(
         total_count = len(reviews_list)
         paginated_reviews = reviews_list[offset:offset + limit]
         
+        logger.info(f"Fetched reviews for service ID {service_id} with {len(paginated_reviews)} reviews returned")
         return {
             "total_count": total_count,
             "count": len(paginated_reviews),
@@ -457,6 +475,7 @@ async def get_service_reviews(
         }
     
     except Exception as e:
+        logger.error(f"Error fetching reviews for service ID {service_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -495,6 +514,7 @@ async def get_user_reviews(
             
             reviews_list.append(review_data)
         
+        logger.info(f"Fetched reviews by user ID {user_id} with {len(reviews_list)} reviews returned")        
         return {
             "count": len(reviews_list),
             "reviews": reviews_list,
@@ -506,6 +526,7 @@ async def get_user_reviews(
         }
     
     except Exception as e:
+        logger.error(f"Error fetching reviews by user ID {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

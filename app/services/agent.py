@@ -1,15 +1,13 @@
 from langchain.agents import create_structured_chat_agent
 from langchain.agents.agent import AgentExecutor
-
-# from langchain.agents import AgentExecutor, create_structured_chat_agent
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.tools import Tool
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from app.services.pineconeService import get_pinecone_service
 from app.config.settings import settings
 import google.generativeai as genai
 from PIL import Image
-import io, logging, re
+import logging, re
 from typing import Dict, Optional
 from geopy.geocoders import Nominatim
 
@@ -490,70 +488,6 @@ class LocationIdentificationAgent:
             logger.error(f"Error getting nearby locations: {str(e)}")
             return f"Error retrieving nearby locations: {str(e)}"
 
-    # def _web_search_tool(self, query: str, visual_features: str = None, gps_location: dict = None) -> str:
-    #     """
-    #     Tool: Search web for location information using Wikipedia + Gemini LLM
-    #     1. Try to fetch Wikipedia summary for the location
-    #     2. If unavailable, fallback to Gemini LLM
-    #     3. Generate engaging tourist-friendly content
-    #     """
-    #     try:
-    #         summary = None
-    #         wiki_url = None
-
-    #         # Step 1: Try fetching Wikipedia summary 
-    #         try:
-    #             wikipedia.set_lang("en")  
-    #             summary = wikipedia.summary(query, sentences=5)  
-    #             page = wikipedia.page(query)
-    #             wiki_url = page.url
-    #         except wikipedia.exceptions.DisambiguationError as e:
-    #             # Pick the first suggested page
-    #             try:
-    #                 first_choice = e.options[0]
-    #                 summary = wikipedia.summary(first_choice, sentences=5)
-    #                 page = wikipedia.page(first_choice)
-    #                 wiki_url = page.url
-    #             except Exception as e2:
-    #                 logger.warning(f"Wikipedia fetch failed for '{query}' (disambiguation fallback): {str(e2)}")
-    #                 summary = None
-    #                 wiki_url = None
-    #         except wikipedia.exceptions.PageError:
-    #             logger.warning(f"Wikipedia page not found for '{query}'")
-    #         except Exception as e:
-    #             logger.warning(f"Wikipedia fetch failed for '{query}': {str(e)}")
-
-    #         # Step 2: Prepare prompt for Gemini
-    #         if summary:
-    #             prompt = f"""
-    #                 You are a Sri Lankan tourism expert. 
-    #                 A tourist captured an image with these features: {visual_features}.
-    #                 The GPS location is {gps_location['lat']}, {gps_location['lng']}.
-    #                 Using the following factual Wikipedia summary, generate an engaging, tourist-friendly description of '{query}'.
-    #                 Include: historical significance, cultural importance, interesting facts, and tips for visitors.
-    #                 Keep it informative, conversational, and about 150-300 words.
-
-    #                 Wikipedia summary:
-    #                 {summary}
-
-    #                 Wikipedia URL: {wiki_url if wiki_url else 'N/A'}
-    #                 """
-    #         else:
-    #             prompt = f"""
-    #             You are a Sri Lankan tourism expert. 
-    #             Generate an engaging, tourist-friendly description of '{query}'.
-    #             Include: historical significance, cultural importance, interesting facts, and tips for visitors.
-    #             Keep it informative, conversational, and about 150-300 words.
-    #             """
-
-    #         # Step 3: Generate content using Gemini LLM
-    #         response = self.text_model.generate_content(prompt)
-    #         return response.text
-
-    #     except Exception as e:
-    #         logger.error(f"Error in web search tool: {str(e)}")
-    #         return f"Error retrieving web information for '{query}': {str(e)}"
-    
     def _web_search_tool(self, query: str, visual_features: str = None, gps_location: dict = None) -> dict:
         """
         Tool: Identify Sri Lankan location and generate detailed tourist description 
