@@ -17,11 +17,11 @@ from app.routes.review_routes import router as review_route
 from app.routes.popular_toprated_routes import router as popular_toprated_route
 
 logging.basicConfig(
-    level=logging.INFO,  # Set to DEBUG for more detailed logs
+    level=logging.INFO, 
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(),  # Print to console
-        logging.FileHandler('app.log')  # Save to file
+        logging.StreamHandler(),  
+        logging.FileHandler('app.log') 
     ]
 )
 logger = logging.getLogger(__name__)

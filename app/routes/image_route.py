@@ -14,7 +14,6 @@ from PIL import Image
 import uuid, io, logging, time, base64
 from typing import Optional, List
 
-
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -200,12 +199,8 @@ async def translate_and_speak(
     request_id = str(uuid.uuid4())[:8]
 
     try:
-        logger.info(f"[{request_id}] translateAndSpeak request received")
-        logger.info(f"[{request_id}] Parameters: destination_name='{destination_name}', "
-                   f"district_name='{district_name}', target_language='{target_language}', "
-                   f"include_intro={include_intro}, slow={slow}")
+        
         logger.info(f"[{request_id}] Description length: {len(description)} chars")
-        logger.info(f"[{request_id}] Description preview: {description[:100]}...")
 
         # Validation
         if not description.strip():
@@ -240,14 +235,13 @@ async def translate_and_speak(
             translation_start = time.time()
             
             try:
-                translation = translator.translate(
-                    full_text_english, dest=lang_config['code'], src='en'
-                )
-                translated_text = translation.text
+                translated_text = GoogleTranslator(
+                    source='en', 
+                    target=lang_config['code']
+                ).translate(full_text_english)
                 
                 translation_time = time.time() - translation_start
-                logger.info(f"[{request_id}] Translation completed in {translation_time:.2f}s")
-                logger.info(f"[{request_id}] Translated text length: {len(translated_text)} chars")
+                logger.info(f"[{request_id}] Translation completed in {translation_time:.2f}s Text length: {len(translated_text)} chars")
                 
             except Exception as trans_error:
                 logger.error(f"[{request_id}] Translation failed: {str(trans_error)}")
@@ -288,7 +282,7 @@ async def translate_and_speak(
         safe_filename = "".join(c for c in destination_name if c.isalnum() or c in (' ', '-', '_')).strip()
         safe_filename = safe_filename.replace(' ', '_') or 'destination'
         
-        logger.info(f"[{request_id}] Request completed successfully - Returning audio stream")
+        logger.info(f"[{request_id}] Generated audio stream successfully...!")
 
         # Return audio with metadata
         return StreamingResponse(
