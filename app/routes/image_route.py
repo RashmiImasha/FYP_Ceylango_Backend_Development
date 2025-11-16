@@ -4,6 +4,7 @@ from firebase_admin import storage
 from app.database.connection import misplace_collection, feedback_collection
 from app.services.agent_service import get_agent_service
 from app.services.pineconeService import get_pinecone_service
+from app.models.image import SnapImageResponse
 from app.utils.crud_utils import CrudUtils
 from app.models.destination import MissingPlaceOut
 from app.models.review import FeedbackRequest
@@ -39,7 +40,7 @@ SUPPORTED_LANGUAGES = {
     "korean": {"code": "ko", "name": "Korean (한국어)"}
 }
 
-@router.post("/snapImage")
+@router.post("/snapImage", response_model=SnapImageResponse)
 async def snap_image_with_agent(
     latitude: float = Form(...),
     longitude: float = Form(...),
@@ -56,7 +57,6 @@ async def snap_image_with_agent(
         try:
             image = Image.open(io.BytesIO(image_bytes))
             image = image.convert('RGB')
-            logger.info(f"Image opened successfully: size={image.size}, mode={image.mode}")
         except Exception as e:
             logger.error(f"Failed to open image: {str(e)}")
             raise HTTPException(status_code=400, detail=f"Invalid image file: {str(e)}")
@@ -79,13 +79,34 @@ async def snap_image_with_agent(
 
             image_phash = CrudUtils.compute_phash(io.BytesIO(image_bytes))
 
+            historical_bg = agent_result.get('historical_background', '')
+            cultural_sig = agent_result.get('cultural_significance', '')
+            special = agent_result.get('what_makes_it_special', '')
+            visitor_exp = agent_result.get('visitor_experience', '')
+            facts = agent_result.get('interesting_facts', [])
+
+            description_parts = []
+            if historical_bg:
+                description_parts.append(f"Historical Background: {historical_bg}")
+            if cultural_sig:
+                description_parts.append(f"Cultural Significance: {cultural_sig}")
+            if special:
+                description_parts.append(f"What Makes It Special: {special}")
+            if visitor_exp:
+                description_parts.append(f"Visitor Experience: {visitor_exp}")
+            if facts:
+                facts_text = " | ".join(facts)
+                description_parts.append(f"Interesting Facts: {facts_text}")
+            
+            combined_description = "\n\n".join(description_parts)
+
             # Save to missingplace collection for admin review
             destination_data = {
                 "destination_name": agent_result.get('destination_name', 'Unknown'),
                 "latitude": latitude,
                 "longitude": longitude,
                 "district_name": agent_result.get('district_name', 'Unknown'),
-                "description": agent_result.get('description', ''),
+                "description": combined_description,
                 "destination_image": [],
                 "category_name": agent_result.get('category', 'Others'),
                 "image_phash": [image_phash]
@@ -106,11 +127,11 @@ async def snap_image_with_agent(
 
             if already_exists:
                 logger.info(f"Duplicate entry found in missingplace: {existing_data.get('destination_name', 'Unknown')}")                
-                return {                   
-                    "destination_name": destination_data["destination_name"],
-                    "district_name": destination_data["district_name"],            
-                    "description": destination_data["description"],                                        
-                }                
+                # return {                   
+                #     "destination_name": destination_data["destination_name"],
+                #     "district_name": destination_data["district_name"],            
+                #     "description": destination_data["description"],                                        
+                # }                
 
             # Upload new image to missingplace storage 
             bucket = storage.bucket()
@@ -124,19 +145,27 @@ async def snap_image_with_agent(
             _, doc_ref = misplace_collection.add(destination_data)
             logger.info("Location not in database - Saving to missing-place collection")
             
-            return {                                                  
-                "destination_name": destination_data["destination_name"],
-                "district_name": destination_data["district_name"],            
-                "description": destination_data["description"],      
-                "request_id": request_id                  
-            }
+            return {                   
+                    "destination_name": agent_result.get("destination_name", "Unknown"),
+                    "district_name": agent_result.get("district_name", "Unknown"),
+                    "historical_background": agent_result.get("historical_background", ""),
+                    "cultural_significance": agent_result.get("cultural_significance", ""),
+                    "what_makes_it_special": agent_result.get("what_makes_it_special", ""),
+                    "visitor_experience": agent_result.get("visitor_experience", ""),
+                    "interesting_facts": agent_result.get("interesting_facts", []),            
+                    "request_id": request_id                                     
+                }  
         
         else:
             logger.info(f"Location already in database: {agent_result.get('destination_name')}")
             return {                   
                     "destination_name": agent_result.get("destination_name", "Unknown"),
-                    "district_name": agent_result.get("district_name", "Unknown"),            
-                    "description": agent_result.get("description", ""),   
+                    "district_name": agent_result.get("district_name", "Unknown"),
+                    "historical_background": agent_result.get("historical_background", ""),
+                    "cultural_significance": agent_result.get("cultural_significance", ""),
+                    "what_makes_it_special": agent_result.get("what_makes_it_special", ""),
+                    "visitor_experience": agent_result.get("visitor_experience", ""),
+                    "interesting_facts": agent_result.get("interesting_facts", []),            
                     "request_id": request_id                                     
                 }             
         
