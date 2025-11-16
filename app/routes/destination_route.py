@@ -1,33 +1,46 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query, BackgroundTasks
 from app.models.destination import DestinationOut
 from app.utils.crud_utils import CrudUtils
+from app.config.settings import settings
 from app.database.connection import destination_collection
 from typing import Optional, List
 import requests, logging
 from app.services.pineconeService import get_pinecone_service
 
 logger = logging.getLogger(__name__)
-OSRM_BASE_URL = "http://router.project-osrm.org"
+OSRM_BASE_URL = settings.OSRM_URL
 router = APIRouter()
 pinecone_service = get_pinecone_service()
 
 #  Background task - delete data from Pinecone
-def delete_from_pinecone_background(destination_id: str):    
+def delete_from_pinecone_background(destination_id: str, data=None):    
     try:
-        pinecone_service.delete_destination(destination_id)
+        pinecone_service.delete_destination_image(destination_id)
         logger.info(f"Successfully deleted destination {destination_id} from Pinecone")
     except Exception as e:
         logger.error(f"Failed to delete from Pinecone: {str(e)}")
 
+    try:         
+        pinecone_service.delete_destination_text(destination_id)
+        logger.info(f"Deleted text {destination_id} from pinecone...!")
+    except Exception as e:
+        logger.error(f"Failed to delete text: {str(e)} from pinecone...!")
+
 #  Background task - sync data to Pinecone ( add & update)
 def sync_to_pinecone_background(destination_id: str, destination_data: dict):
+    try:
+        # Sync images
+        pinecone_service.upsert_destination_image(destination_id, destination_data)
+        logger.info(f"Synced images for {destination_id} to pinecone...!")
+    except Exception as e:
+        logger.error(f"Failed to sync images: {str(e)} to pinecone...!")
     
     try:
-        pinecone_service.upsert_destination(destination_id, destination_data)
-        logger.info(f"Successfully synced destination {destination_id} to Pinecone")
-
+        # Sync text 
+        pinecone_service.upsert_destination_text(destination_id, destination_data)
+        logger.info(f"Synced text for {destination_id} to pinecone...!")
     except Exception as e:
-        logger.error(f"Failed to sync to Pinecone: {str(e)}")
+        logger.error(f"Failed to sync text: {str(e)} to pinecone...!")
 
 # add destination
 @router.post("/", response_model=DestinationOut)
@@ -230,6 +243,7 @@ async def bulk_sync_to_pinecone(background_tasks: BackgroundTasks):
             
             # Add sync task to background
             background_tasks.add_task(
+                # delete_from_pinecone_background,
                 sync_to_pinecone_background,
                 doc.id,
                 data
