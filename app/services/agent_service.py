@@ -118,10 +118,10 @@ class LocationIdentificationAgent:
         visual_analysis: str,
         gps_location: dict,
         confidence: str
-    ) -> str:
+    ) -> dict:
         """
         Generate rich, accurate content using only Gemini when location is known
-        This is used for HIGH/MEDIUM confidence matches from the database
+        Returns structured dict with separate fields
         """
         try:
             logger.info(f"Generating content for known location: {destination_name}")
@@ -144,59 +144,75 @@ class LocationIdentificationAgent:
             {visual_analysis[:600]}
 
             YOUR TASK:
-            Generate an engaging, comprehensive description for tourists visiting {destination_name}.
+            Generate structured information for tourists visiting {destination_name}.
 
-            REQUIREMENTS:
-            1. **Historical Background**: Provide rich historical context about this specific location
-            - When was it built/established?
-            - Who built it or what civilization/era does it belong to?
-            - Historical events that occurred here
+            You MUST respond ONLY with a valid JSON object in this exact format (no markdown, no preamble):
 
-            2. **Cultural Significance**: Why is this place important?
-            - Religious/cultural importance
-            - Role in Sri Lankan heritage
-            - UNESCO status (if applicable)
-
-            3. **What Makes It Special**: Unique features and highlights
-            - Architectural details
-            - Natural beauty or special characteristics
-            - Famous elements or attractions within the location
-
-            4. **Visitor Experience**: Practical information tourists need
-            - Best time to visit
-            - What to see/do there
-            - Approximate visit duration
-            - Any special tips or recommendations
-
-            5. **Interesting Facts**: 2-3 fascinating facts that most tourists don't know
+            {{
+            "historical_background": "when it was built/established, who built it, historical events that occurred here",
+            "cultural_significance": "religious/cultural importance, role in Sri Lankan heritage, UNESCO status if applicable",
+            "what_makes_it_special": "unique features, architectural details, natural beauty, famous elements",
+            "visitor_experience": "best time to visit, what to see/do, visit duration, special tips",
+            "interesting_facts": [
+                "fascinating fact 1 that most tourists don't know",
+                "fascinating fact 2 that most tourists don't know",
+                "fascinating fact 3 that most tourists don't know"
+            ]
+            }}
 
             GUIDELINES:
             - Use your extensive knowledge about {destination_name} specifically
-            - Be accurate and factual (you know Sri Lankan attractions well)
+            - Be accurate and factual
             - Write in an enthusiastic, warm, conversational tone
-            - Make tourists excited to visit
-            - Length: 250-400 words
-            - Use the database info as a foundation, but greatly expand on it with your knowledge
+            - Each text field should be well-crafted sentences
+            - Provide exactly 3 interesting facts
+            - Return ONLY the JSON object, nothing else
 
-            Generate the description now:
+            Generate the JSON now:
             """
             
             response = self.text_model.generate_content(prompt)
-            generated_content = response.text
+            generated_text = response.text.strip()
             
-            logger.info(f"Generated {len(generated_content)} chars of content for {destination_name}")
-            return generated_content
+            # Remove markdown code fences if present
+            generated_text = re.sub(r'^```json\s*|\s*```$', '', generated_text, flags=re.MULTILINE).strip()
             
-        except Exception as e:
-            logger.error(f"Error generating content with Gemini: {str(e)}")
+            # Parse JSON
+            import json
+            content_dict = json.loads(generated_text)
             
-            # Fallback to database description if Gemini fails
-            if db_description and len(db_description) > 50:
-                logger.info("Gemini failed, using database description")
-                return db_description
-            else:
-                return f"{destination_name} is a notable {category_name} in {district_name}, Sri Lanka. This location offers visitors a unique glimpse into Sri Lankan culture and heritage."
+            logger.info(f"generate_content_with_gemini: Generated structured content for {destination_name}")
+            return content_dict
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"generate_content_with_gemini: JSON parsing error: {str(e)}")
+            
+            return {
+                "historical_background": f"{destination_name} is a notable in {district_name}, Sri Lanka.",
+                "cultural_significance": "This location offers visitors a unique glimpse into Sri Lankan culture and heritage.",
+                "what_makes_it_special": db_description if db_description else "A remarkable destination worth visiting.",
+                "visitor_experience": "Visit during daylight hours for the best experience.",
+                "interesting_facts": [
+                    "This is one of Sri Lanka's important cultural sites.",
+                    "The location attracts both local and international visitors.",
+                    "Photography is usually permitted here."
+                ]
+            }
         
+        except Exception as e:
+            logger.error(f"generate_content_with_gemini: Error generating content with Gemini: {str(e)}")
+            return {
+                "historical_background": f"{destination_name} is located in {district_name}.",
+                "cultural_significance": "This site holds cultural importance in Sri Lanka.",
+                "what_makes_it_special": "A unique destination to explore.",
+                "visitor_experience": "Plan your visit accordingly.",
+                "interesting_facts": [
+                    "More information available on-site.",
+                    "Local guides can provide detailed insights.",
+                    "Check visiting hours before arrival."
+                ]
+            }   
+         
     def _create_tools(self):
         """Create tools for the agent"""
         
@@ -491,11 +507,11 @@ class LocationIdentificationAgent:
 
     def _web_search_tool(self, query: str, visual_features: str = None, gps_location: dict = None) -> dict:
         """
-        Tool: Identify Sri Lankan location and generate detailed tourist description 
+        Tool: Identify Sri Lankan location and generate structured tourist description 
         using Gemini reasoning + reverse geocoding context.
         """
         try:
-            # --- Step 1: Reverse geocode latitude and longitude ---
+            # [Keep existing reverse geocoding code...]
             lat = gps_location.get("lat") if gps_location else None
             lng = gps_location.get("lng") if gps_location else None
             district_name, city_name, nearby_feature = None, None, None
@@ -527,73 +543,96 @@ class LocationIdentificationAgent:
                 except Exception as geo_error:
                     logger.warning(f"Reverse geocoding failed: {geo_error}")
 
-            # Combine available hints
             geo_context = ", ".join(filter(None, [nearby_feature, city_name, district_name])) or "Unknown region in Sri Lanka"
             logger.info(f"Reverse geocoded context: {geo_context}")
 
             prompt = f"""
-                You are a Sri Lankan tourism assistant AI.
+            You are a Sri Lankan tourism assistant AI.
 
-                Use the following context to reason about the most likely location in the image
-                and generate a detailed tourist description.
+            Use the following context to reason about the most likely location in the image
+            and generate structured tourist information.
 
-                CONTEXT INFORMATION:
-                - Latitude: {lat or 'unknown'}
-                - Longitude: {lng or 'unknown'}
-                - Reverse-geocoded region: {geo_context}
-                - District: {district_name or 'unknown'}
-                - Query hint: "{query if query else 'None'}"
-                - Visual analysis: {visual_features if visual_features else 'No visual data.'}
+            CONTEXT INFORMATION:
+            - Latitude: {lat or 'unknown'}
+            - Longitude: {lng or 'unknown'}
+            - Reverse-geocoded region: {geo_context}
+            - District: {district_name or 'unknown'}
+            - Query hint: "{query if query else 'None'}"
+            - Visual analysis: {visual_features if visual_features else 'No visual data.'}
 
-                GUIDANCE:
-                1. Assume the image is from **within or near the {district_name or 'given'} District**.
-                2. Give higher confidence to landmarks or attractions that actually exist in that district.
-                3. Begin your answer with the line:
-                **Location:** <name of the place or landmark>
-                4. Then write a 200–350-word tourist-style description including:
-                - Historical and cultural significance
-                - Key attractions or rituals
-                - Interesting facts
-                - Visiting tips and etiquette
-                5. If uncertain of the exact name, describe the most probable landmark or area in {district_name or 'the identified district'}.
-                6. Avoid referencing places from other districts unless clearly justified by GPS proximity.
-                """
+            GUIDANCE:
+            1. Assume the image is from **within or near the {district_name or 'given'} District**.
+            2. Give higher confidence to landmarks that actually exist in that district.
 
-            # --- Step 3: Generate reasoning output using Gemini ---
+            You MUST respond ONLY with a valid JSON object in this exact format (no markdown, no preamble):
+
+            {{
+            "destination_name": "name of the place or landmark",
+            "historical_background": "history, who built it, historical events",
+            "cultural_significance": "religious/cultural importance, heritage significance",
+            "what_makes_it_special": "unique features, attractions, key elements",
+            "visitor_experience": "visiting tips, best time, what to see/do",
+            "interesting_facts": [
+                "fascinating fact 1",
+                "fascinating fact 2",
+                "fascinating fact 3"
+            ]
+            }}
+
+            If uncertain of exact name, provide the most probable landmark in {district_name or 'the district'}.
+            Return ONLY the JSON object, nothing else.
+            """
+
             response = self.text_model.generate_content(prompt)
             generated_text = response.text.strip() if response and response.text else ""
-
-            # --- Step 4: Extract destination name from Gemini output ---
-            destination_name = "Unknown"
-            match = re.search(r"(?:\*\*)?Location:(?:\*\*)?\s*(.+)", generated_text)
-            if match:
-                destination_name = match.group(1).strip()
-                destination_name = re.sub(r"[\.\-\–]+$", "", destination_name)
-
-            # --- Step 5: Handle fallbacks gracefully ---
-            if not generated_text:
-                generated_text = (
-                    f"This area near coordinates ({lat}, {lng}) appears to be around {geo_context}. "
-                    f"The visual features suggest {visual_features[:200] if visual_features else 'a scenic location'}. "
-                    "It likely represents a site of cultural, historical, or natural importance typical of Sri Lanka."
-                )
-
-            if not district_name:
-                district_name = "Unknown"
+            
+            # Remove markdown code fences
+            generated_text = re.sub(r'^```json\s*|\s*```$', '', generated_text, flags=re.MULTILINE).strip()
+            
+            # Parse JSON
+            import json
+            content_dict = json.loads(generated_text)
+            
+            # Extract destination name and ensure district is set
+            destination_name = content_dict.get("destination_name", "Unknown")
             
             return {
-                "destination_name": destination_name or "Unknown",
+                "destination_name": destination_name,
                 "district_name": district_name or "Unknown",
-                "description": generated_text,
+                "historical_background": content_dict.get("historical_background", ""),
+                "cultural_significance": content_dict.get("cultural_significance", ""),
+                "what_makes_it_special": content_dict.get("what_makes_it_special", ""),
+                "visitor_experience": content_dict.get("visitor_experience", ""),
+                "interesting_facts": content_dict.get("interesting_facts", [])
             }
 
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing error in web search: {str(e)}")
+            return {
+                "destination_name": "Unknown",
+                "district_name": district_name or "Unknown",
+                "historical_background": f"This location is near {geo_context}.",
+                "cultural_significance": "A site of cultural or natural importance in Sri Lanka.",
+                "what_makes_it_special": visual_features[:200] if visual_features else "A scenic location.",
+                "visitor_experience": "Further exploration recommended.",
+                "interesting_facts": [
+                    "Located in a culturally rich region.",
+                    "Typical of Sri Lankan heritage sites.",
+                    "Worth visiting for cultural insights."
+                ]
+            }
         except Exception as e:
             logger.error(f"Error in web search tool: {str(e)}", exc_info=True)
             return {
                 "destination_name": "Unknown",
                 "district_name": "Unknown",
-                "description": f"Error generating location content: {str(e)}",
+                "historical_background": "",
+                "cultural_significance": "",
+                "what_makes_it_special": "",
+                "visitor_experience": "",
+                "interesting_facts": []
             }
+    
     
     async def identify_and_generate_content(
         self,
@@ -632,33 +671,6 @@ class LocationIdentificationAgent:
                 logger.info("HIGH CONFIDENCE match found!")
                 confidence = "High"
                 found_in_db = True               
-                
-                # for i, line in enumerate(lines):
-                #     logger.info(f"Line {i}: {line}")
-                #     if "[HIGH CONFIDENCE" in line :
-                #         parts = line.split("[")
-                #         if len(parts) > 0:
-                #             # Remove leading numbers and dots (e.g., "1. ")
-                #             destination_name = parts[0].strip()
-                #             # Remove leading number pattern like "1. ", "2. ", etc.
-                #             # import re
-                #             destination_name = re.sub(r'^\d+\.\s*', '', destination_name)
-                                        
-               
-                #     if line.strip().startswith("district:"):
-                #         district_name = line.replace("district:", "").strip()
-
-                #     if line.strip().startswith("category:"):
-                #         category_name = line.replace("category:", "").strip()
-                    
-                #     if line.strip().startswith("description:"):
-                #         db_description = line.replace("description:", "").strip()
-                    
-                #     if (destination_name != "Unknown" and 
-                #         district_name != "Unknown" and 
-                #         category_name != "Unknown"):
-                #         # logger.info("All data extracted from HIGH confidence match")
-                #         break
 
                 for line in lines:
                     line_clean = line.strip()
@@ -710,7 +722,7 @@ class LocationIdentificationAgent:
 
             if found_in_db and destination_name != "Unknown":
                 
-                description = self._generate_content_with_gemini(
+                content_dict = self._generate_content_with_gemini(
                     destination_name=destination_name,
                     district_name=district_name,
                     category_name=category_name,
@@ -732,14 +744,24 @@ class LocationIdentificationAgent:
 
                 destination_name = web_result.get("destination_name", "Unknown")
                 district_name = web_result.get("district_name", "Unknown")
-                description = web_result.get("description", "")
+                content_dict = {
+                    "historical_background": web_result.get("historical_background", ""),
+                    "cultural_significance": web_result.get("cultural_significance", ""),
+                    "what_makes_it_special": web_result.get("what_makes_it_special", ""),
+                    "visitor_experience": web_result.get("visitor_experience", ""),
+                    "interesting_facts": web_result.get("interesting_facts", [])
+                }
 
             result = {
                 "success": True,
                 "destination_name": destination_name,
                 "district_name": district_name,
                 "category": category_name,
-                "description": description,
+                "historical_background": content_dict.get("historical_background", ""),
+                "cultural_significance": content_dict.get("cultural_significance", ""),
+                "what_makes_it_special": content_dict.get("what_makes_it_special", ""),
+                "visitor_experience": content_dict.get("visitor_experience", ""),
+                "interesting_facts": content_dict.get("interesting_facts", []),
                 "confidence": confidence,
                 "found_in_db": found_in_db,
                 "used_web_search": use_web_search,
@@ -749,7 +771,6 @@ class LocationIdentificationAgent:
             }
             
             logger.info(f"Final extracted values: name={destination_name}, district={district_name}, category={category_name}, confidence={confidence}")
-            # logger.info(f"Result: {result['destination_name']} - {result['confidence']} confidence")
             return result
 
         except Exception as e:
