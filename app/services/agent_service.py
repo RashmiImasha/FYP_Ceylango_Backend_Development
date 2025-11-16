@@ -1,3 +1,4 @@
+from app.config.settings import settings
 from langchain.agents import create_structured_chat_agent
 from langchain.agents.agent import AgentExecutor
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -24,11 +25,11 @@ class LocationIdentificationAgent:
 
         # initialize vision model
         genai.configure(api_key=settings.GOOGLE_API_KEY)
-        self.vision_model = genai.GenerativeModel('gemini-1.5-pro')
-        self.text_model = genai.GenerativeModel('gemini-2.5-flash-lite')
+        self.vision_model = genai.GenerativeModel(settings.VISION_MODEL)
+        self.text_model = genai.GenerativeModel(settings.GEMINI_MODEL)
 
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash-lite",
+            model=settings.GEMINI_MODEL,
             google_api_key=settings.GOOGLE_API_KEY,
             temperature=0.2  # Lower temperature for more consistent reasoning
         )
@@ -396,7 +397,7 @@ class LocationIdentificationAgent:
                 vector=self._current_embedding,
                 top_k=5,
                 include_metadata=True,
-                namespace='destinations',
+                namespace='destinationImages',
                 filter=filter_dict
             )
 
@@ -453,7 +454,7 @@ class LocationIdentificationAgent:
                 vector=zero_vector,
                 top_k=20,
                 include_metadata=True,
-                namespace='destinations',
+                namespace='destinationImages',
                 filter=filter_dict
             )
 

@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from firebase_admin import storage
 from app.database.connection import misplace_collection, feedback_collection
-from app.services.agent import get_agent_service
+from app.services.agent_service import get_agent_service
 from app.services.pineconeService import get_pinecone_service
 from app.utils.crud_utils import CrudUtils
 from app.models.destination import MissingPlaceOut
@@ -408,7 +408,7 @@ def move_missing_to_destination(missingplace_id: str):
         logger.info(f"Moved missing place to destination collection : ID {record['id']}")
         
         # Sync to Pinecone
-        pinecone_service.upsert_destination(record['id'], record)
+        pinecone_service.upsert_destination_image(record['id'], record)
         logger.info(f"Synced record to Pinecone: ID {record['id']}")
         
         # Delete from missingplace

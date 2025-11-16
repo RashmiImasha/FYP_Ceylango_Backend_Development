@@ -1,43 +1,27 @@
-Cython
-setuptools
-wheel
-PyYAML>=6.0.1
-
-# Web Framework
-fastapi==0.115.12
-uvicorn>=0.29.0
-
-# Database
-firebase-admin==7.1.0
-
-# Data Validation
-pydantic==2.11.3
-
-# Environment Variables
-python-dotenv==1.0.1
+pydantic
 pydantic-settings
 pydantic[email]
+python-multipart
 
-# Development tools (optional)
-httpx==0.28.1
-pytest==8.2.2
-python-multipart==0.0.20
-pillow
+# Web Framework
+fastapi
+uvicorn
+firebase-admin
 imagehash
 
 # AI and Image Processing
-langchain-google-genai
-langchain-core
-pinecone-client
-transformers==4.36.0
-torch==2.1.0
-torchvision==0.16.0
+pinecone
+transformers==4.42.0
+torchvision== 0.19.1+cpu
+torch==2.4.1+cpu
+google-generativeai 
+
+langchain==0.1.20 
+langchain-google-genai==1.0.1 
+langchain-community==0.0.38
+
 geopy 
-
-# Translation and Text-to-Speech
 gtts
-deep_translator 
-
-
-
-
+deep_translator
+sentence-transformers
+ 

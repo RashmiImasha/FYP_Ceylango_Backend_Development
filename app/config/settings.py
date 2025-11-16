@@ -12,6 +12,13 @@ class Settings(BaseSettings):
 
     PINECONE_API_KEY: str
     PINECONE_ENVIRONMENT: Optional[str] = "us-east-1"
+    PINECONE_INDEX_NAME: str
+
+    TEXT_EMBEDDING_MODEL: str
+    CLIP_MODEL: str
+    GEMINI_MODEL: str
+    VISION_MODEL: str
+    OSRM_URL: str
 
     class Config:
         env_file = ".env"

@@ -8,10 +8,11 @@ from app.routes.auth_route import router as auth_route
 from app.routes.destination_route import router as destination_route
 from app.routes.image_route import router as image_route
 from app.routes.emergancy_route import router as emergancy_route
+from app.routes.chatbot_route import router as chatbot_route
 
 # service_provider routes
-from app.routes.service_providers.service_providers_route import router as service_providers_route
-from app.routes.service_providers.service_provider_profile_route import router as service_provider_profile_route
+from app.routes.service_providers_route import router as service_providers_route
+from app.routes.service_provider_profile_route import router as service_provider_profile_route
 from app.routes.review_routes import router as review_route
 from app.routes.popular_toprated_routes import router as popular_toprated_route
 
@@ -25,14 +26,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Create FastAPI app
 app = FastAPI(
     title="Sri Lanka Tourism Platform API",
     description="API for tourist and service provider management with real-time chat",
     version="1.0.0"
 )
 
-# CORS middleware to allow requests from any origin
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  
@@ -43,6 +42,7 @@ app.add_middleware(
 
 # register the routes
 app.include_router(image_route, prefix="/image")
+app.include_router(chatbot_route, prefix="/chatbot")
 app.include_router(category_route, prefix="/category")
 app.include_router(auth_route, prefix="/auth")
 app.include_router(destination_route, prefix="/destination")
