@@ -16,13 +16,13 @@ logger = logging.getLogger(__name__)
 class PosterMetadata(BaseModel):
     name: str
     description: str
-    expiration_date: str
+    expiration_date: Optional[str] = None
 
 class UpdatePosterMetadataRequest(BaseModel):
     poster_id: str
     name: str
     description: str
-    expiration_date: str
+    expiration_date: Optional[str] = None
 
 class DeleteImagesRequest(BaseModel):
     image_urls: List[str]
@@ -269,7 +269,7 @@ async def upload_poster_image(
     metadata: str = Form(...),  # JSON string
     current_user: tuple = Depends(get_current_user)
 ):
-    """Upload a promotional poster with metadata"""
+    """Upload a promotional poster with metadata (expiration_date is optional)"""
     uid, user_data = current_user
     
     try:
@@ -303,10 +303,13 @@ async def upload_poster_image(
             "id": poster_id,
             "name": poster_metadata.name.strip(),
             "description": poster_metadata.description.strip(),
-            "expiration_date": poster_metadata.expiration_date,
             "image_url": image_url,
             "created_at": datetime.now().isoformat()
         }
+        
+        # Only add expiration_date if provided
+        if poster_metadata.expiration_date:
+            poster_data["expiration_date"] = poster_metadata.expiration_date
         
         current_posters = profile_data.get("poster_images", [])
         current_posters.append(poster_data)
@@ -327,7 +330,7 @@ async def upload_poster_image(
     except Exception as e:
         logger.error(f"Error uploading poster for UID {uid}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
+    
 @router.put("/profile/images/posters/metadata")
 async def update_poster_metadata(
     request: UpdatePosterMetadataRequest,
