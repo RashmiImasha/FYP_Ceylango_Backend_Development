@@ -127,11 +127,6 @@ async def snap_image_with_agent(
 
             if already_exists:
                 logger.info(f"Duplicate entry found in missingplace: {existing_data.get('destination_name', 'Unknown')}")                
-                # return {                   
-                #     "destination_name": destination_data["destination_name"],
-                #     "district_name": destination_data["district_name"],            
-                #     "description": destination_data["description"],                                        
-                # }                
 
             # Upload new image to missingplace storage 
             bucket = storage.bucket()

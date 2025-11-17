@@ -14,11 +14,11 @@ pinecone_service = get_pinecone_service()
 
 #  Background task - delete data from Pinecone
 def delete_from_pinecone_background(destination_id: str, data=None):    
-    try:
-        pinecone_service.delete_destination_image(destination_id)
-        logger.info(f"Successfully deleted destination {destination_id} from Pinecone")
-    except Exception as e:
-        logger.error(f"Failed to delete from Pinecone: {str(e)}")
+    # try:
+    #     pinecone_service.delete_destination_image(destination_id)
+    #     logger.info(f"Successfully deleted destination {destination_id} from Pinecone")
+    # except Exception as e:
+    #     logger.error(f"Failed to delete from Pinecone: {str(e)}")
 
     try:         
         pinecone_service.delete_destination_text(destination_id)
@@ -28,12 +28,12 @@ def delete_from_pinecone_background(destination_id: str, data=None):
 
 #  Background task - sync data to Pinecone ( add & update)
 def sync_to_pinecone_background(destination_id: str, destination_data: dict):
-    try:
-        # Sync images
-        pinecone_service.upsert_destination_image(destination_id, destination_data)
-        logger.info(f"Synced images for {destination_id} to pinecone...!")
-    except Exception as e:
-        logger.error(f"Failed to sync images: {str(e)} to pinecone...!")
+    # try:
+    #     # Sync images
+    #     pinecone_service.upsert_destination_image(destination_id, destination_data)
+    #     logger.info(f"Synced images for {destination_id} to pinecone...!")
+    # except Exception as e:
+    #     logger.error(f"Failed to sync images: {str(e)} to pinecone...!")
     
     try:
         # Sync text 

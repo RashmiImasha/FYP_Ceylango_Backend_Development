@@ -9,6 +9,7 @@ from app.routes.destination_route import router as destination_route
 from app.routes.image_route import router as image_route
 from app.routes.emergancy_route import router as emergancy_route
 from app.routes.chatbot_route import router as chatbot_route
+from app.routes.tripPlan_route import router as trip_router
 
 # service_provider routes
 from app.routes.service_providers_route import router as service_providers_route
@@ -48,6 +49,7 @@ app.include_router(auth_route, prefix="/auth")
 app.include_router(destination_route, prefix="/destination")
 app.include_router(emergancy_route, prefix="/emergancy")
 app.include_router(chat_route, prefix="/chat")
+app.include_router(trip_router, prefix="/trip")
 
 app.include_router(service_providers_route, prefix="/service_provider")
 app.include_router(service_provider_profile_route, prefix="/service_provider")
