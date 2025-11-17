@@ -152,11 +152,7 @@ class LocationIdentificationAgent:
             "historical_background": "when it was built/established, who built it, historical events that occurred here",
             "cultural_significance": "religious/cultural importance, role in Sri Lankan heritage, UNESCO status if applicable",
             "what_makes_it_special": "unique features, architectural details, natural beauty, famous elements",
-            "visitor_experience": "best time to visit, what to see/do, visit duration, special tips",
-            "interesting_facts": [
-                "fascinating fact 1 that most tourists don't know",
-                "fascinating fact 2 that most tourists don't know",
-                "fascinating fact 3 that most tourists don't know"
+            visitor_experience": "best time to visit, what to see/do, visit duration, special tips
             ]
             }}
 

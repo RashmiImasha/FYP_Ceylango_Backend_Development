@@ -179,7 +179,9 @@ class PineconeService:
           
             metadata = {
                 'destination_id': destination_id,
-                'destination_name': destination_data.get('destination_name', '')[:200],                
+                'destination_name': destination_data.get('destination_name', '')[:200],   
+                'district_name': destination_data.get('district_name', ''),  
+                'category_name': destination_data.get('category_name', '')             
             }
             
             # Upsert to Pinecone 
