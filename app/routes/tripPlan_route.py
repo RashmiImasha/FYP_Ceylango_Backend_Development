@@ -44,41 +44,30 @@ async def get_trip_plan(trip_id: str):
         logger.error(f"Error retrieving trip plan: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/all", response_model=TripPlanResponse)
+@router.get("/all", response_model=List[TripPlanResponse])
 async def get_all_trip_plans(
     limit: int = Query(default=10, le=100, description="Maximum number of trips to return"),
-    user_id: Optional[str] = Query(None, description="Filter by user_id (optional)")
 ): 
-    try:   
-        query = tripPlan_collection
-        
-        # Add user filter if provided
-        if user_id:
-            query = query.where('user_id', '==', user_id)
-        
-        docs = query.limit(limit).get()
+    try:                   
+        docs = tripPlan_collection.limit(limit).get()
         
         trip_plans = []
         for doc in docs:
-            data = doc.to_dict()
+            data = doc.to_dict()                        
             
-            # Extract request data
-            request_data = data.get('request', {})
-            
-            all_trip_plans = TripPlanResponse(
-                "trip_id": data["trip_id"],
-                "trip_name": data.get("trip_name"),
-                "summary": data.get("summary"),
-                "itinerary": data.get("itinerary"),
-                "map_data": data.get("map_data"),
-                "generated_at": data.get("generated_at", ""),
-                "alternatives": data.get("alternatives")
+            trip = TripPlanResponse(
+                trip_id= data.get("trip_id"),
+                trip_name= data.get("trip_name"),
+                summary= data.get("summary"),
+                itinerary= data.get("itinerary"),
+                map_data= data.get("map_data"),
+                generated_at= data.get("generated_at", ""),
+                alternatives= data.get("alternatives")
             )
-            trip_plans.append(all_trip_plans)
+            trip_plans.append(trip)
         
-        # Sort in Python by created_at (descending)
         trip_plans.sort(
-            key=lambda x: x.created_at if x.created_at else 0, 
+            key=lambda x: x.generated_at or "", 
             reverse=True
         )        
         return trip_plans
