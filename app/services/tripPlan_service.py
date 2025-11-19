@@ -6,12 +6,191 @@ from pinecone import Pinecone
 from sentence_transformers import SentenceTransformer
 from app.utils.tripPlan_utils import get_osrm_route, get_visit_duration, get_destination_categories_for_interests
 from app.models.tripPlan import TripPlanRequest
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict
 import logging, asyncio, json
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+class TripPlanningConfig:
+    # Scoring weights
+    SIMILARITY_WEIGHT = 0.40
+    INTEREST_WEIGHT = 0.35
+    RATING_WEIGHT = 0.15
+    COUPLE_BOOST_WEIGHT = 0.10
+    
+    # Filtering thresholds
+    MIN_RATING = 3.5
+    MIN_COMPOSITE_SCORE = 0.3
+    
+    # Item limits
+    MAX_ITEMS_FOR_PLANNING = 25
+    MAX_PINECONE_RESULTS = 30
+    
+    # Time constraints
+    DAILY_ACTIVE_HOURS = 10
+    MEAL_TIME_MINUTES = 180
+    BUFFER_TIME_PERCENTAGE = 0.15
+    MAX_TRAVEL_TIMES_IN_PROMPT = 60
+    
+    # Couple bonuses
+    COUPLE_BOOST_SCORE = 0.15
+    
+    # LLM Config
+    LLM_TEMPERATURE = 0.3
+    LLM_TOP_P = 0.8
+    LLM_TOP_K = 40
+    LLM_MAX_TOKENS = 4096
+
+class TripPlanningException(Exception):
+    """Base exception for trip planning errors"""
+    pass
+
+class NoDestinationsFoundError(TripPlanningException):
+    """Raised when no destinations match criteria"""
+    pass
+
+class NoSuitablePlacesError(TripPlanningException):
+    """Raised when filtering removes all options"""
+    pass
+
+class ItineraryValidationError(TripPlanningException):
+    """Raised when generated itinerary fails validation"""
+    pass
+
+class DatabaseError(TripPlanningException):
+    """Raised when database operations fail"""
+    pass
+
+async def validate_trip_request(request: TripPlanRequest) -> None:
+    """
+    Validate trip request before processing
+    """
+    # Validate districts exist in database
+    valid_districts = []
+    try:
+        # Make district checks parallel and async
+        async def check_district(district: str) -> tuple:
+            """Check if district exists in database"""
+            loop = asyncio.get_event_loop()
+            docs = await loop.run_in_executor(
+                None,
+                lambda: destination_collection.where(
+                    "district_name", "==", district.strip().title()
+                ).limit(1).get()
+            )
+            doc_list = list(docs)
+            return (district, len(doc_list) > 0)
+        
+        # Check all districts in parallel
+        district_results = await asyncio.gather(
+            *[check_district(d) for d in request.districts],
+            return_exceptions=True
+        )
+        
+        # Filter valid districts
+        for result in district_results:
+            if isinstance(result, Exception):
+                logger.error(f"District check failed: {result}")
+                continue
+            district, is_valid = result
+            if is_valid:
+                valid_districts.append(district)
+        
+        if not valid_districts:
+            raise ValueError(
+                f"None of the specified districts ({', '.join(request.districts)}) "
+                f"have destinations in the database"
+            )
+    except ValueError:
+        raise
+    except Exception as e:
+        logger.error(f"District validation error: {e}")
+        raise ValueError("Failed to validate districts")
+    
+    # Validate date range is reasonable (CPU-bound, no async needed)
+    start = datetime.strptime(request.start_date, "%Y-%m-%d")
+    end = datetime.strptime(request.end_date, "%Y-%m-%d")
+    duration_days = (end - start).days + 1
+    
+    if duration_days > 30:
+        raise ValueError(f"Trip duration too long: {duration_days} days. Maximum is 30 days.")
+    
+    if duration_days < 1:
+        raise ValueError("Trip must be at least 1 day long")
+    
+    if start < datetime.now() - timedelta(days=365):
+        raise ValueError("Start date cannot be more than 1 year in the past")
+
+def create_rule_based_itinerary(
+    items: List[Dict],
+    travel_time_matrix: np.ndarray,
+    start_date: str,
+    end_date: str,
+    group_type: str
+) -> Dict:
+    """
+    Fallback rule-based planner when LLM fails
+    """
+    duration_days = (datetime.strptime(end_date, "%Y-%m-%d") - 
+                    datetime.strptime(start_date, "%Y-%m-%d")).days + 1
+    
+    itinerary = []
+    items_per_day = min(5, len(items) // duration_days + 1)
+    
+    for day in range(duration_days):
+        day_date = (datetime.strptime(start_date, "%Y-%m-%d") + 
+                   timedelta(days=day)).strftime("%Y-%m-%d")
+        
+        start_idx = day * items_per_day
+        end_idx = min(start_idx + items_per_day, len(items))
+        day_items = items[start_idx:end_idx]
+        
+        activities = []
+        current_time = datetime.strptime("08:00", "%H:%M")
+        prev_idx = None
+        
+        for item_idx, item in enumerate(day_items):
+            actual_idx = start_idx + item_idx
+            
+            # Add travel time
+            travel_mins = 0
+            if prev_idx is not None:
+                travel_mins = int(travel_time_matrix[prev_idx][actual_idx])
+                current_time += timedelta(minutes=travel_mins)
+            
+            visit_duration = item.get('typical_visit_duration', 90)
+            end_time = current_time + timedelta(minutes=visit_duration)
+            
+            activities.append({
+                "start_time": current_time.strftime("%H:%M"),
+                "end_time": end_time.strftime("%H:%M"),
+                "item_index": actual_idx,
+                "activity_type": "visit",
+                "travel_from_previous_mins": travel_mins,
+                "notes": f"Visit {item.get('destination_name', 'location')}"
+            })
+            
+            current_time = end_time
+            prev_idx = actual_idx
+        
+        itinerary.append({
+            "day": day + 1,
+            "date": day_date,
+            "theme": "Exploration",
+            "activities": activities
+        })
+    
+    return {
+        "reasoning": "Generated using rule-based fallback planner",
+        "itinerary": itinerary,
+        "summary": {
+            "total_destinations": len([a for d in itinerary for a in d['activities']]),
+            "total_travel_time_mins": 0,
+            "total_distance_km": 0
+        }
+    }
 
 def generate_trip_name(districts: List[str], start_date: str, interests: List[str], group_type: str) -> str:
 
@@ -57,6 +236,7 @@ def generate_trip_name(districts: List[str], start_date: str, interests: List[st
         name = f"{location} {group_label} {interest_label} - {month_year}"
     
     return name
+
 
 class ServicesInitializer:
     
@@ -126,23 +306,43 @@ class DestinationRetriever:
 
     async def enrich_with_firebase(self, destination_ids: List[str]) -> List[Dict]:
         """
-        Fetch full destination data from Firebase using imported collection
+        Fetch full destination data from Firebase with parallel batches
         """        
         try:
             destinations = []
-            batch_size = 10  # Firestore 'in' query limit
-
-            for i in range(0, len(destination_ids), batch_size):
-                batch_ids = destination_ids[i:i + batch_size]
-
-                docs = (destination_collection.where("__name__", "in", batch_ids).get())
+            batch_size = 10
+            
+            async def fetch_batch(batch_ids):
+                """Fetch a single batch"""
+                loop = asyncio.get_event_loop()
+                docs = await loop.run_in_executor(
+                    None,
+                    lambda: destination_collection.where("__name__", "in", batch_ids).get()
+                )
+                batch_results = []
                 for doc in docs:
                     obj = doc.to_dict()
                     obj["destination_id"] = doc.id
                     obj["item_type"] = "destination"
-                    destinations.append(obj)
+                    batch_results.append(obj)
+                return batch_results
             
-            # logger.info(f"Firebase returned {len(destinations)} destinations")
+            # Create tasks for all batches
+            tasks = []
+            for i in range(0, len(destination_ids), batch_size):
+                batch_ids = destination_ids[i:i + batch_size]
+                tasks.append(fetch_batch(batch_ids))
+            
+            # Execute all batches in parallel
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Flatten results
+            for result in batch_results:
+                if isinstance(result, Exception):
+                    logger.error(f"Batch fetch failed: {result}")
+                    continue
+                destinations.extend(result)
+            
             return destinations
 
         except Exception as e:
@@ -194,11 +394,12 @@ class DestinationRetriever:
     
 class TripPreprocessor:
     """Handles distance calculations and business rules"""
+
+    _category_cache: Dict[str, np.ndarray] = {}
     
     def __init__(self, services: ServicesInitializer):        
         self.osrm_url = services.OSRM_BASE_URL
         self.embedding_model = services.embedding_model
-        self._category_cache = {}
     
     async def calculate_distance_and_time_matrices(self, items: List[Dict]) -> tuple:
 
@@ -238,11 +439,11 @@ class TripPreprocessor:
     
     def get_or_create_category_embedding(self, category_name: str) -> np.ndarray:
         """Cache category embeddings"""
-        if category_name not in self._category_cache:
-            self._category_cache[category_name] = self.embedding_model.encode(
+        if category_name not in TripPreprocessor._category_cache:
+            TripPreprocessor._category_cache[category_name] = self.embedding_model.encode(
                 category_name, convert_to_numpy=True
             )
-        return self._category_cache[category_name]
+        return TripPreprocessor._category_cache[category_name]
     
     def calculate_category_interest_score(self, category_name: str, interest_embeddings: np.ndarray) -> float:
         """Calculate semantic similarity"""
@@ -257,7 +458,7 @@ class TripPreprocessor:
         
         return float(np.max(similarities))
     
-    async def apply_business_rules(
+    def apply_business_rules(
         self, 
         destinations: List[Dict],
         group_type: str, 
@@ -271,7 +472,7 @@ class TripPreprocessor:
         # Process destinations
         for dest in destinations:
             rating = dest.get('average_rating', 0)
-            if rating < 3.5:
+            if rating < TripPlanningConfig.MIN_RATING:
                 continue            
             category = dest.get('category_name', '').lower()
             
@@ -293,7 +494,7 @@ class TripPreprocessor:
             if group_type == "couple":
                 romantic_keywords = ['beach', 'sunset', 'nature', 'scenic', 'spa']
                 if any(keyword in category for keyword in romantic_keywords):
-                    couple_boost = 0.15
+                    couple_boost = TripPlanningConfig.COUPLE_BOOST_SCORE
             dest['couple_boost'] = couple_boost
             
             # Visit duration
@@ -304,18 +505,19 @@ class TripPreprocessor:
             
             # Composite score
             composite_score = (
-                dest.get('similarity_score', 0) * 0.40 +
-                interest_score * 0.35 +
-                (rating / 5.0) * 0.15 +
-                couple_boost * 0.10
+                dest.get('similarity_score', 0) * TripPlanningConfig.SIMILARITY_WEIGHT +
+                interest_score * TripPlanningConfig.INTEREST_WEIGHT +
+                (rating / 5.0) * TripPlanningConfig.RATING_WEIGHT +
+                couple_boost * TripPlanningConfig.COUPLE_BOOST_WEIGHT
             )
             dest['composite_score'] = composite_score
             
-            if composite_score >= 0.3:
+            if composite_score >= TripPlanningConfig.MIN_COMPOSITE_SCORE:
                 all_items.append(dest)
         
         # Sort by composite score
         all_items.sort(key=lambda x: x['composite_score'], reverse=True)
+        all_items = all_items[:TripPlanningConfig.MAX_ITEMS_FOR_PLANNING]
         logger.info(f"Filtered {len(all_items)} destinations")
         return all_items
 
@@ -339,22 +541,22 @@ class TripPlanningAgent:
         duration_days = (datetime.strptime(end_date, "%Y-%m-%d") - 
                         datetime.strptime(start_date, "%Y-%m-%d")).days + 1
         
-        daily_hours = 10
+        daily_hours = TripPlanningConfig.DAILY_ACTIVE_HOURS
         total_minutes = duration_days * daily_hours * 60
-        meal_time = duration_days * 180
-        buffer_time = int(total_minutes * 0.15)
+        meal_time = duration_days * TripPlanningConfig.MEAL_TIME_MINUTES 
+        buffer_time = int(total_minutes * TripPlanningConfig.BUFFER_TIME_PERCENTAGE)
         usable_time = total_minutes - meal_time - buffer_time
         
         # Prepare items list (destinations + services)
         item_list = []
-        for idx, item in enumerate(items[:25]):  # Increased to 25 for services
+        for idx, item in enumerate(items[:TripPlanningConfig.MAX_ITEMS_FOR_PLANNING]):  
             item_data = {
                 "index": idx,
                 "type": item.get('item_type'),
-                "id": item.get('destination_id') or item.get('service_id'),
-                "name": item.get('destination_name') or item.get('service_name'),
-                "category": item.get('category_name') or item.get('service_category'),
-                "district": item.get('district_name') or item.get('district'),
+                "id": item.get('destination_id'),
+                "name": item.get('destination_name') ,
+                "category": item.get('category_name') ,
+                "district": item.get('district_name') ,
                 "rating": item.get('average_rating', 0),
                 "visit_duration_mins": item['typical_visit_duration'],
                 "latitude": item['latitude'],
@@ -391,7 +593,7 @@ class TripPlanningAgent:
             {json.dumps(item_list, indent=2)}
 
             **TRAVEL TIMES (minutes between places):**
-            {json.dumps(travel_times[:60], indent=2)}
+            {json.dumps(travel_times[:TripPlanningConfig.MAX_TRAVEL_TIMES_IN_PROMPT], indent=2)}
 
             **CRITICAL RULES:**
             1. DO NOT create separate "travel" activities - travel time is automatically included in "travel_from_previous_mins"
@@ -473,15 +675,20 @@ class TripPlanningAgent:
         )
         
         try:
-            response = self.llm_model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.3,
-                    top_p=0.8,
-                    top_k=40,
-                    max_output_tokens=4096,
+            # Make LLM call async to avoid blocking
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.llm_model.generate_content(
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=TripPlanningConfig.LLM_TEMPERATURE,
+                        top_p=TripPlanningConfig.LLM_TOP_P,
+                        top_k=TripPlanningConfig.LLM_TOP_K,
+                        max_output_tokens=TripPlanningConfig.LLM_MAX_TOKENS,
+                    )
                 )
-            )            
+            )           
             response_text = response.text
             
             if "```json" in response_text:
@@ -493,8 +700,18 @@ class TripPlanningAgent:
             return itinerary_data
             
         except Exception as e:
-            logger.error(f"TripPlanningAgent: Error generating itinerary: {e}")
-            raise Exception(f"Failed to generate itinerary: {str(e)}")
+            logger.error(f"LLM itinerary generation failed: {e}. Using fallback planner.")       
+
+            # USE FALLBACK
+            fallback_itinerary = create_rule_based_itinerary(
+                items=items,
+                travel_time_matrix=travel_time_matrix,
+                start_date=trip_request['start_date'],
+                end_date=trip_request['end_date'],
+                group_type=trip_request['group_type']
+            )
+            return fallback_itinerary 
+
 
 class ItineraryPostProcessor:
     
@@ -520,6 +737,7 @@ class ItineraryPostProcessor:
     ) -> Dict:
         item_lookup = {i: item for i, item in enumerate(items)}
         enhanced_itinerary = []
+        global_seen_items = set()
         
         for day in itinerary_data['itinerary']:
             enhanced_day = {
@@ -531,7 +749,6 @@ class ItineraryPostProcessor:
                 "total_travel_time_mins": 0
             }
 
-            seen_items = set()  # Track visited locations
             prev_item_idx = None
             
             for activity in day['activities']:
@@ -541,11 +758,12 @@ class ItineraryPostProcessor:
                     continue
                 item_idx = activity.get('item_index')
                 # Skip duplicate visits to same location
-                if item_idx is not None and item_idx in seen_items:
+                if item_idx is not None and item_idx in global_seen_items:
+                    logger.warning(f"Skipping duplicate destination index {item_idx} on day {day['day']}")
                     continue          
 
                 if item_idx is not None:
-                    seen_items.add(item_idx)  
+                    global_seen_items.add(item_idx)  
             
                 enhanced_activity = {
                     "start_time": activity['start_time'],
@@ -564,9 +782,7 @@ class ItineraryPostProcessor:
                     
                     enhanced_activity.update({
                         "destination_id": item['destination_id'],
-                        "destination_name": item['destination_name'],
-                        # "category": item['category_name'],
-                        # "description": item.get('description', '')[:200],
+                        "destination_name": item['destination_name'],                        
                         "rating": item.get('average_rating', 0),
                         "coordinates": {
                             "latitude": item['latitude'],
@@ -631,8 +847,17 @@ async def save_trip_plan(trip_id: str, trip_name: str, request: TripPlanRequest,
             "map_data": response['map_data'],            
         }
         
-        tripPlan_collection.document(trip_id).set(trip_data)
-        logger.info(f"Trip plan {trip_id} saved with name: {trip_name}")
+        try:
+            # Make Firestore write async
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,
+                lambda: tripPlan_collection.document(trip_id).set(trip_data)
+            )
+            logger.info(f"Trip plan {trip_id} saved with name: {trip_name}")
+        except Exception as db_error:
+            logger.error(f"Failed to save trip plan: {trip_id}: {db_error}")
+            raise Exception(f"Failed to save trip plan to database: {str(db_error)}")
         
     except Exception as e:
         logger.error(f"Error saving trip plan: {e}")
@@ -640,6 +865,8 @@ async def save_trip_plan(trip_id: str, trip_name: str, request: TripPlanRequest,
 
 async def generate_trip_plan(request: TripPlanRequest):
     """Main function to generate trip plan"""
+    
+    await validate_trip_request(request)
     services = ServicesInitializer()
     
     # Step 1: Retrieve destinations (RAG with Pinecone)
@@ -651,18 +878,24 @@ async def generate_trip_plan(request: TripPlanRequest):
     )
     
     if not destinations:
-        raise Exception("No destinations found matching your criteria")
+        raise NoDestinationsFoundError(
+            f"No destinations found for districts: {', '.join(request.districts)} "
+            f"with interests: {', '.join(request.interests)}"
+        )
     
     # Step 3: Apply business rules to both
     preprocessor = TripPreprocessor(services)
-    all_items = await preprocessor.apply_business_rules(
+    all_items = preprocessor.apply_business_rules(
         destinations=destinations,
         group_type=request.group_type,
         interests=request.interests
     )
     
     if not all_items:
-        raise Exception("No suitable places after filtering")
+        raise NoSuitablePlacesError(
+            f"No places passed filtering criteria (min rating: {TripPlanningConfig.MIN_RATING}, "
+            f"min score: {TripPlanningConfig.MIN_COMPOSITE_SCORE})"
+        )
     
     # Step 4: Calculate distances
     distance_matrix, travel_time_matrix = await preprocessor.calculate_distance_and_time_matrices(all_items)
@@ -688,7 +921,12 @@ async def generate_trip_plan(request: TripPlanRequest):
     is_valid = ItineraryPostProcessor.validate_itinerary(itinerary_data, request)
     
     if not is_valid:
-        raise Exception("Generated itinerary failed validation")
+        duration_days = (datetime.strptime(request.end_date, "%Y-%m-%d") - 
+                        datetime.strptime(request.start_date, "%Y-%m-%d")).days + 1
+        raise ItineraryValidationError(
+            f"Generated itinerary failed validation. Expected {duration_days} days, "
+            f"got {len(itinerary_data.get('itinerary', []))} days"
+        )
     
     # Step 7: Enhance
     enhanced_data = ItineraryPostProcessor.enhance_itinerary(

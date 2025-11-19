@@ -75,7 +75,8 @@ async def snap_image_with_agent(
         found_in_db = agent_result.get("found_in_db", False)
         used_web_search = agent_result.get("used_web_search", False)  
 
-        if not found_in_db or used_web_search:
+        if used_web_search:
+            logger.info(f"Location not in main database: {agent_result.get('destination_name')} - Checking for duplicates")
 
             image_phash = CrudUtils.compute_phash(io.BytesIO(image_bytes))
 
@@ -100,7 +101,7 @@ async def snap_image_with_agent(
             
             combined_description = "\n\n".join(description_parts)
 
-            # Save to missingplace collection for admin review
+            # Prepare destination data
             destination_data = {
                 "destination_name": agent_result.get('destination_name', 'Unknown'),
                 "latitude": latitude,
@@ -112,33 +113,37 @@ async def snap_image_with_agent(
                 "image_phash": [image_phash]
             }
 
+            #  Check for duplicates 
             existing_docs = misplace_collection.stream()
             already_exists = False
-            existing_data = None
+            existing_doc_id = None
+
             for doc in existing_docs:
                 data = doc.to_dict()
                 if (
-                    destination_data["image_phash"][0] in data.get("image_phash", [])
+                    image_phash in data.get("image_phash", [])
                     or data.get("destination_name", "").strip().lower() == destination_data["destination_name"].strip().lower()
                 ):
                     already_exists = True
-                    existing_data = data
+                    existing_doc_id = doc.id
+                    logger.info(f"Duplicate found in missingplace: {data.get('destination_name', 'Unknown')} (ID: {existing_doc_id})")
                     break
 
-            if already_exists:
-                logger.info(f"Duplicate entry found in missingplace: {existing_data.get('destination_name', 'Unknown')}")                
+            if not already_exists:
 
-            # Upload new image to missingplace storage 
-            bucket = storage.bucket()
-            image_id = str(uuid.uuid4())
-            blob = bucket.blob(f'missingplace_images/{image_id}_{destination_image.filename}')
-            blob.upload_from_string(image_bytes, content_type=destination_image.content_type)
-            blob.make_public()
-            destination_data["destination_image"].append(blob.public_url)       
-            
-            # Save to Firebase
-            _, doc_ref = misplace_collection.add(destination_data)
-            logger.info("Location not in database - Saving to missing-place collection")
+                # Upload new image to missingplace storage 
+                bucket = storage.bucket()
+                image_id = str(uuid.uuid4())
+                blob = bucket.blob(f'missingplace_images/{image_id}_{destination_image.filename}')
+                blob.upload_from_string(image_bytes, content_type=destination_image.content_type)
+                blob.make_public()
+                destination_data["destination_image"].append(blob.public_url)       
+                
+                # Save to Firebase
+                _, doc_ref = misplace_collection.add(destination_data)
+                logger.info(f"Saved new location to missingplace: {destination_data['destination_name']} (ID: {doc_ref.id})")
+            else:
+                logger.info(f"Skipped saving - Duplicate already exists in missingplace (ID: {existing_doc_id})")
             
             return {                   
                     "destination_name": agent_result.get("destination_name", "Unknown"),
@@ -152,20 +157,23 @@ async def snap_image_with_agent(
                 }  
         
         else:
-            logger.info(f"Location already in database: {agent_result.get('destination_name')}")
-            return {                   
-                    "destination_name": agent_result.get("destination_name", "Unknown"),
-                    "district_name": agent_result.get("district_name", "Unknown"),
-                    "historical_background": agent_result.get("historical_background", ""),
-                    "cultural_significance": agent_result.get("cultural_significance", ""),
-                    "what_makes_it_special": agent_result.get("what_makes_it_special", ""),
-                    "visitor_experience": agent_result.get("visitor_experience", ""),
-                    "interesting_facts": agent_result.get("interesting_facts", []),            
-                    "request_id": request_id                                     
-                }             
+            logger.info(f"Location found in destination collection: {agent_result.get('destination_name')} - Not saving to missingplace")
         
+        return {                   
+                "destination_name": agent_result.get("destination_name", "Unknown"),
+                "district_name": agent_result.get("district_name", "Unknown"),
+                "historical_background": agent_result.get("historical_background", ""),
+                "cultural_significance": agent_result.get("cultural_significance", ""),
+                "what_makes_it_special": agent_result.get("what_makes_it_special", ""),
+                "visitor_experience": agent_result.get("visitor_experience", ""),
+                "interesting_facts": agent_result.get("interesting_facts", []),            
+                "request_id": request_id                                     
+            }             
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error in snap_image_with_agent: {str(e)}")
+        logger.error(f"Error in snap_image_with_agent: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500, 
             detail=f"Failed to process image: {str(e)}"

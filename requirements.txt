@@ -26,3 +26,5 @@ gtts
 deep_translator
 sentence-transformers
  
+pandas 
+matplotlib
