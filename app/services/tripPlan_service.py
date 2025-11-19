@@ -21,16 +21,13 @@ def generate_trip_name(districts: List[str], start_date: str, interests: List[st
     interest_map = {
         'adventure sports': 'Adventure',
         'cultural sites': 'Cultural',
-        # 'food and dining': 'Culinary',
         'nature and wildlife': 'Nature',
         'museums and art': 'Art & Culture',
         'beaches and relaxation': 'Beach',
-        # 'shopping': 'Shopping',
         'nightlife': 'Nightlife',
         'photography': 'Photography',
         'local experience': 'Local',
         'historical places': 'Heritage',
-        # 'wellness and spa': 'Wellness'
     }
     
     primary_interest = interests[0] if interests else 'Discovery'

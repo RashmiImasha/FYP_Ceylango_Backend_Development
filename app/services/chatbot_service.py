@@ -41,7 +41,7 @@ class LanguageDetector:
         'si': r'[\u0D80-\u0DFF]',  # Sinhala Unicode range
         'ta': r'[\u0B80-\u0BFF]',  # Tamil Unicode range
         'hi': r'[\u0900-\u097F]',  # Hindi Unicode range
-        'zh': r'[\u4E00-\u9FFF]',  # Chinese Unicode range
+        'zh-CN': r'[\u4E00-\u9FFF]',  # Chinese Unicode range
         'ar': r'[\u0600-\u06FF]',  # Arabic Unicode range
     }
     
@@ -50,7 +50,8 @@ class LanguageDetector:
         'si': 'Sinhala',
         'ta': 'Tamil',
         'hi': 'Hindi',
-        'zh': 'Chinese',
+        'zh-CN': 'Chinese (Simplified)',
+        'zh-TW': 'Chinese (Traditional)',
         'ar': 'Arabic',
         'de': 'German',
         'fr': 'French',

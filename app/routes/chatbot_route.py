@@ -1,6 +1,5 @@
 from fastapi import APIRouter
 from google.cloud import firestore
-from fastapi.responses import JSONResponse
 from app.models.chatbot import ChatRequest, ChatMessage, ChatSession
 from app.database.connection import chatbot_history_collection
 from app.services.chatbot_service import MultilingualRAGChatbot
@@ -80,13 +79,10 @@ def chat_message(request: ChatRequest):
     except Exception as e:
         logger.error(f"Failed to save chat history: {e}")
     
-    return JSONResponse(
-        content={
-            "response": response,
-            "session_id": session_id  
-        },
-        headers={"Content-Type": "application/json; charset=utf-8"}
-    )
+    return {
+        "response": response,
+        "session_id": session_id  
+    }
     
 
 @router.get("/history/{session_id}")
@@ -101,15 +97,12 @@ def get_chat_history(session_id: str):
         
         session_data = session_doc.to_dict()
         
-        return JSONResponse(
-        content={
+        return {
             "session_id": session_id,
             "messages": session_data.get('messages', []),
             "created_at": session_data.get('created_at'),
             "updated_at": session_data.get('updated_at')
-        },
-        headers={"Content-Type": "application/json; charset=utf-8"}
-    )
+        }
         
     except Exception as e:
         logger.error(f"Failed to fetch chat history: {e}")
@@ -139,10 +132,7 @@ def get_user_chat_sessions(user_id: str):
                 'message_count': len(messages)
             })
         
-        return JSONResponse(
-        content={"sessions": sessions_list},
-        headers={"Content-Type": "application/json; charset=utf-8"}
-    )
+        return {"sessions": sessions_list}
         
     except Exception as e:
         if "index" in str(e).lower():
@@ -173,10 +163,7 @@ def get_user_chat_sessions(user_id: str):
                     reverse=True
                 )
                 
-                return JSONResponse(
-        content={"sessions": sessions_list},
-        headers={"Content-Type": "application/json; charset=utf-8"}
-    )
+                return {"sessions": sessions_list}
                 
             except Exception as fallback_error:
                 logger.error(f"Fallback also failed: {fallback_error}")
@@ -199,13 +186,11 @@ def delete_chat_history(session_id: str):
         chat_ref.delete()        
         logger.info(f"Chat session {session_id} deleted successfully")
         
-        return JSONResponse(
-        content={
+        return {
             "message": "Chat history deleted successfully",
             "session_id": session_id,
-            "success": True},
-        headers={"Content-Type": "application/json; charset=utf-8"}
-        )
+            "success": True
+        }
         
     except Exception as e:
         logger.error(f"Failed to delete chat history: {e}")
