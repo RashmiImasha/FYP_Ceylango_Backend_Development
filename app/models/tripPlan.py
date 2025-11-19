@@ -1,21 +1,19 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, validator
 from typing import Any, Dict, Optional, List
 from enum import Enum
+from datetime import datetime
 
-# Enums for controlled inputs
+
 class InterestType(str, Enum):
     ADVENTURE_SPORTS = "adventure sports"
     CULTURAL_SITES = "cultural sites"
-    # FOOD_DINING = "food and dining"
     NATURE_WILDLIFE = "nature and wildlife"
     MUSEUMS_ART = "museums and art"
     BEACHES_RELAXATION = "beaches and relaxation"
-    # SHOPPING = "shopping"
     NIGHTLIFE = "nightlife"
     PHOTOGRAPHY = "photography"
     LOCAL_EXPERIENCE = "local experience"
     HISTORICAL_PLACES = "historical places"
-    # WELLNESS_SPA = "wellness and spa"
 
 class TransportMode(str, Enum):
     BIKE = "bike"
@@ -58,12 +56,11 @@ class TripPlanRequest(BaseModel):
     end_date: str    # YYYY-MM-DD
     group_type: GroupType
     interests: List[InterestType]
-    transport_mode: TransportMode = TransportMode.CAR
+    transport_mode: TransportMode
     
     @validator('end_date')
     def validate_dates(cls, v, values):
         if 'start_date' in values:
-            from datetime import datetime
             start = datetime.strptime(values['start_date'], '%Y-%m-%d')
             end = datetime.strptime(v, '%Y-%m-%d')
             if end <= start:
@@ -86,15 +83,3 @@ class TripPlanResponse(BaseModel):
     map_data: Dict[str, Any]
     alternatives: Optional[List[Dict]] = None
     generated_at: str
-
-class TripPlanSummary(BaseModel):
-    trip_id: str
-    trip_name: str
-    created_at: Any
-    districts: List[str]
-    start_date: str
-    end_date: str
-    duration_days: int
-    group_type: str
-    interests: List[str]
-    # status: str

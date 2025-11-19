@@ -2,6 +2,9 @@ import uvicorn, logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import sys, asyncio
+from app.test.test_image import generate_test_dataset
+
 from app.routes.chat_route import router as chat_route
 from app.routes.category_route import router as category_route
 from app.routes.auth_route import router as auth_route
@@ -62,4 +65,15 @@ def root():
 
 
 if __name__ == "__main__" :
-    uvicorn.run(app, host = "0.0.0.0", port = 9090, log_level = "info")
+
+    if len(sys.argv) > 1 and sys.argv[1] == "run_eval":
+        # Run the evaluation script
+        from app.test.test_agent_evaluator import run_evaluation_demo  # import your script
+        asyncio.run(run_evaluation_demo())
+    
+    else:
+        uvicorn.run(app, host = "0.0.0.0", port = 9090, log_level = "info")
+
+
+    # generate_test_dataset(test_size=25)
+    # uvicorn.run(app, host = "0.0.0.0", port = 9090, log_level = "info")

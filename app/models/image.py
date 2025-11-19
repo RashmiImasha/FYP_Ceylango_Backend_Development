@@ -10,3 +10,5 @@ class SnapImageResponse(BaseModel):
     visitor_experience: str
     interesting_facts: List[str]
     request_id: str
+
+    

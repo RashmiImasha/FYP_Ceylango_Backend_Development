@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query
-from app.models.tripPlan import TripPlanRequest, TripPlanResponse, TripPlanSummary
+from app.models.tripPlan import TripPlanRequest, TripPlanResponse
 from app.database.connection import tripPlan_collection
 from app.services.tripPlan_service import generate_trip_plan
 import logging
@@ -8,7 +8,6 @@ from typing import List, Optional
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# In your FastAPI endpoint:
 @router.post("/create")
 async def create_trip_plan(request: TripPlanRequest):
     try:
@@ -75,7 +74,6 @@ async def get_all_trip_plans(
     except Exception as e:
         logger.error(f"Error fetching trip plans: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.delete("/delete/{trip_id}")
 async def delete_trip_plan(trip_id: str, user_id: str):
