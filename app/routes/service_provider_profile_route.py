@@ -207,7 +207,6 @@ async def update_profile(
         logger.error(f"Error updating profile: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# FormData only for file uploads
 @router.post("/profile/images/profile")
 async def upload_profile_images(
     images: List[UploadFile] = File(...),
@@ -262,7 +261,7 @@ async def upload_profile_images(
         logger.error(f"Error uploading profile images for UID {uid}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# FormData for file + metadata as JSON string
+
 @router.post("/profile/images/posters")
 async def upload_poster_image(
     poster: UploadFile = File(...),
@@ -383,7 +382,7 @@ async def update_poster_metadata(
         logger.error(f"Error updating poster metadata: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     
-# JSON endpoint for deletions
+
 @router.delete("/profile/images/profile")
 async def delete_profile_images(
     request: DeleteImagesRequest,
@@ -922,42 +921,6 @@ async def get_providers_by_district(
         }    
     except Exception as e:
         logger.error(f"Error fetching providers by district {district}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/dashboard/stats")
-async def get_dashboard_stats(current_user: tuple = Depends(get_current_user)):
-
-    """Get dashboard statistics for service provider"""
-    uid, user_data = current_user
-    
-    try:
-        profile_doc = profiles_collection.document(uid).get()
-        
-        if not profile_doc.exists:
-            raise HTTPException(status_code=404, detail="Profile not found")
-        
-        profile_data = profile_doc.to_dict()
-        
-        # Calculate completion percentage
-        completion_score = calculate_profile_completion(profile_data)
-        
-        stats = {
-            "profile_completion": completion_score,
-            "is_active": profile_data.get("is_active", True),
-            "profile_images_count": len(profile_data.get("profile_images", [])),
-            "poster_images_count": len(profile_data.get("poster_images", [])),
-            "amenities_count": len(profile_data.get("amenities", [])),
-            "has_coordinates": bool(profile_data.get("coordinates")),
-            "has_operating_hours": bool(profile_data.get("operating_hours")),
-            "has_social_media": bool(profile_data.get("social_media")),
-            "profile_views": 0,  # TODO: Implement view tracking
-            "total_bookings": 0,  # TODO: Implement booking system
-        }     
-        logger.info(f"Dashboard stats fetched for UID {uid}")   
-        return {"stats": stats}
-    
-    except Exception as e:
-        logger.error(f"Error fetching dashboard stats for UID {uid}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 def calculate_profile_completion(profile_data: Dict[str, Any]) -> Dict[str, Any]:
