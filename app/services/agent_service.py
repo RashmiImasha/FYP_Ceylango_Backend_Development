@@ -1,9 +1,8 @@
 from app.config.settings import settings
-from langchain.agents import create_structured_chat_agent
-from langchain.agents.agent import AgentExecutor
+from langchain.agents import create_react_agent, AgentExecutor
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.tools import Tool
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain.prompts import PromptTemplate
 from app.services.pineconeService import get_pinecone_service
 from app.config.settings import settings
 import google.generativeai as genai
@@ -15,15 +14,10 @@ from geopy.geocoders import Nominatim
 logger = logging.getLogger(__name__)
 
 class LocationIdentificationAgent:
-    """
-    Intelligent agent for identifying locations from images using
-    multiple tools: Pinecone search, Vision analysis, GPS verification
-    """
+    
     def __init__(self):
         
         self.pinecone_service = get_pinecone_service()
-
-        # initialize vision model
         genai.configure(api_key=settings.GOOGLE_API_KEY)
         self.vision_model = genai.GenerativeModel(settings.VISION_MODEL)
         self.text_model = genai.GenerativeModel(settings.GEMINI_MODEL)
@@ -45,7 +39,7 @@ class LocationIdentificationAgent:
         # Create agent
         self.agent_executor = self._create_agent()
         
-        logger.info("LocationIdentificationAgent initialized")
+        # logger.info("LocationIdentificationAgent initialized")
     
     def set_image_and_gps(self, image: Image.Image, gps_location: Dict[str, float]):
         """
@@ -152,8 +146,13 @@ class LocationIdentificationAgent:
             "historical_background": "when it was built/established, who built it, historical events that occurred here",
             "cultural_significance": "religious/cultural importance, role in Sri Lankan heritage, UNESCO status if applicable",
             "what_makes_it_special": "unique features, architectural details, natural beauty, famous elements",
-            visitor_experience": "best time to visit, what to see/do, visit duration, special tips
-            ]
+            "visitor_experience": "best time to visit, what to see/do, visit duration, special tips",
+            "interesting_facts": [
+                    "fascinating fact 1",
+                    "fascinating fact 2",
+                    "fascinating fact 3"
+                ]
+            
             }}
 
             GUIDELINES:
@@ -176,6 +175,18 @@ class LocationIdentificationAgent:
             # Parse JSON
             import json
             content_dict = json.loads(generated_text)
+
+            for field in ['historical_background', 'cultural_significance', 'what_makes_it_special', 'visitor_experience']:
+                value = content_dict.get(field, "")
+                if isinstance(value, list):
+                    # Convert list to paragraph
+                    content_dict[field] = " ".join(value)
+                    logger.warning(f"Converted {field} from list to string for {destination_name}")
+            
+            #  VALIDATION: Ensure interesting_facts is a list
+            facts = content_dict.get('interesting_facts', [])
+            if not isinstance(facts, list):
+                content_dict['interesting_facts'] = [str(facts)]
             
             logger.info(f"generate_content_with_gemini: Generated structured content for {destination_name}")
             return content_dict
@@ -186,7 +197,7 @@ class LocationIdentificationAgent:
             return {
                 "historical_background": f"{destination_name} is a notable in {district_name}, Sri Lanka.",
                 "cultural_significance": "This location offers visitors a unique glimpse into Sri Lankan culture and heritage.",
-                "what_makes_it_special": db_description if db_description else "A remarkable destination worth visiting.",
+                "what_makes_it_special": "A remarkable destination worth visiting.",
                 "visitor_experience": "Visit during daylight hours for the best experience.",
                 "interesting_facts": [
                     "This is one of Sri Lanka's important cultural sites.",
@@ -218,22 +229,21 @@ class LocationIdentificationAgent:
                 func=self._analyze_image_tool,
                 description="""
                 Analyzes the captured image to identify visual features, landmarks, and architectural elements.
-                This tool uses AI vision to describe what's visible in the image.
                 Input: "analyze" (no parameters needed, uses current image context)
                 Returns: Detailed visual analysis including landmarks, architecture, natural features, and cultural elements.
-                USE THIS FIRST to understand what the image shows before searching the database.
+                **USE THIS FIRST** in every workflow.
                 """
             ),
             Tool(
                 name="SearchDatabaseByImage",
                 func=self._search_database_tool,
                 description="""
-                Searches the Sri Lankan destinations database using visual similarity matching.
+                Searches the Sri Lankan destinations database using image similarity matching.
                 Compares the captured image with stored location images using CLIP embeddings.
                 If GPS location is available, filters results within 10km radius.
                 Input: "search" (no parameters needed, uses current image and GPS context)
                 Returns: Top 5 matching locations with similarity scores and their descriptions.
-                Use this to find if the location exists in the database.
+                **USE AFTER visual analysis**.               
                 """
             ),
             Tool(
@@ -244,18 +254,29 @@ class LocationIdentificationAgent:
                 This helps identify what landmarks or attractions are in the vicinity.
                 Input: "nearby" (no parameters needed, uses current GPS context)
                 Returns: List of nearby destinations with names, descriptions, and distances.
-                Use this when image search has low confidence but GPS is available.
-                """
+                **USE WHEN** database confidence is MEDIUM/LOW for verification.                """
             ),
             Tool(
-                name="SearchWebForLocation",
-                func=self._web_search_tool,
-                description="""
-                Searches the internet for information about a location.
-                Use this when database search confidence is low or when you need additional context.
-                Input: Location name or description (e.g., "temple in Kandy district")
-                Returns: Historical and cultural information from web sources.
-                Use as a fallback when database confidence < 0.75 or for additional verification.
+            name="SearchWebForLocation",
+            func=self._web_search_tool_wrapper,  
+            description="""
+                Identifies unknown Sri Lankan locations using web search + reverse geocoding.
+            
+                ONLY USE WHEN:
+                - SearchDatabaseByImage returned LOW confidence (<0.75)
+                - No matches found in database
+                - Nearby verification failed
+                
+                Input formats accepted:
+                1. Plain text: "temple with golden roof"
+                2. JSON: {"query": "temple", "visual_features": "...", "gps_location": {...}}
+                
+                This tool:
+                - Uses reverse geocoding to identify the region
+                - Generates complete tourist content (history, culture, facts)
+                - Returns structured information ready for final output
+                
+                FALLBACK TOOL - Do not use if database has HIGH confidence match.
                 """
             )
         ]
@@ -263,73 +284,45 @@ class LocationIdentificationAgent:
         return tools
 
     def _create_agent(self):
-        """Create the reasoning agent"""
+        """Create ReAct agent for location identification"""
         
-        system_template = """You are an expert Sri Lankan tourism AI assistant specializing in location identification from images.
-        Your mission: Accurately identify locations from photos captured by tourists and generate engaging historical/cultural content.
-        WORKFLOW (Follow strictly):
+        template = """You are an expert Sri Lankan location identification assistant with access to multiple tools.
 
-        1. **Visual Analysis First**
-        - Always start with AnalyzeImageVisually to understand what's in the photo
-        - Identify key visual features: temples, beaches, mountains, forts, etc.
+            Your task: Identify locations from images and generate tourist-friendly content.
 
-        2. **Database Search**
-        - Use SearchDatabaseByImage to find matches in the verified database
-        - Evaluate confidence scores:
-            * Score > 0.85: HIGH confidence - Trust database information
-            * Score 0.75-0.85: MEDIUM confidence - Verify with nearby locations
-            * Score < 0.75: LOW confidence - Use web search or nearby locations
+            STRICT WORKFLOW:
+            1. ALWAYS call AnalyzeImageVisually first
+            2. ALWAYS call SearchDatabaseByImage second
+            3. Check confidence score:
+            - HIGH (>0.85): Accept database result
+            - MEDIUM (0.75-0.85): Call GetNearbyLocations to verify
+            - LOW (<0.75): Call GetNearbyLocations then SearchWebForLocation
+            4. Provide final answer with all required fields
 
-        3. **Decision Logic**
-        HIGH confidence (>0.85):
-        - Accept database match
-        - Use stored description and history
-        - Mention the matched location name
-        
-        MEDIUM confidence (0.75-0.85):
-        - Check GetNearbyLocations for verification
-        - If nearby location names match visual features, proceed
-        - Otherwise, use SearchWebForLocation
-        
-        LOW confidence (<0.75):
-        - Use GetNearbyLocations to understand the area
-        - If visual features match nearby landmarks, identify
-        - Use SearchWebForLocation for additional context
-        - If still uncertain, state "Unknown" clearly
+            AVAILABLE TOOLS:
+            {tools}
 
-        4. **Content Generation**
-        - Create engaging, tourist-friendly content in the requested language
-        - Include: Historical significance, cultural importance, interesting facts
-        - Keep tone informative yet conversational
-        - Length: 150-300 words
+            TOOL NAMES: {tool_names}
 
-        CRITICAL RULES:
-        - NEVER fabricate location names or history
-        - If uncertain, clearly state uncertainty level
-        - Always cross-reference visual analysis with database/nearby results
-        - For famous Sri Lankan landmarks (Sigiriya, Temple of Tooth, Galle Fort), be confident with high-score matches
-        - Consider GPS accuracy limitations (±50-100m typical)
+            Use this format:
 
-        Current context:
-        - Date: September 30, 2025
-        - User is in Sri Lanka
-        - GPS accuracy: ±50m typical for mobile devices
-        """
+            Question: {input}
+            Thought: What should I do first?
+            Action: [tool name from {tool_names}]
+            Action Input: [input for the tool]
+            Observation: [tool output]
+            ... (repeat Thought/Action/Observation as needed)
+            Thought: I have gathered enough information
+            Final Answer: [structured summary of findings]
 
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", system_template + """
-                TOOLS AVAILABLE:
-                {tools}
+            Begin!
 
-                TOOL NAMES:
-                {tool_names}
+            Question: {input}
+            {agent_scratchpad}"""
 
-                Always choose the best tool based on context. """),
-            ("human", "{input}"),
-            MessagesPlaceholder(variable_name="agent_scratchpad"),
-        ])
+        prompt = PromptTemplate.from_template(template)
 
-        agent = create_structured_chat_agent(
+        agent = create_react_agent(
             llm=self.llm,
             tools=self.tools,
             prompt=prompt
@@ -339,11 +332,11 @@ class LocationIdentificationAgent:
             agent=agent,
             tools=self.tools,
             verbose=True,
-            max_iterations=5,
+            max_iterations=6,
             handle_parsing_errors=True,
             return_intermediate_steps=True
         )
-    
+
     def _analyze_image_tool(self, input_str: str) -> str:
         """Tool: Analyze image using Gemini Vision"""
         try:
@@ -353,29 +346,40 @@ class LocationIdentificationAgent:
             image_copy = self._current_image.copy()
             
             prompt = f"""
-            Analyze this image captured in Sri Lanka at GPS coordinates: {self._current_gps.get('lat', 'unknown')}, {self._current_gps.get('lng', 'unknown')}.
+                Analyze this image captured in Sri Lanka at GPS coordinates: {self._current_gps.get('lat', 'unknown')}, {self._current_gps.get('lng', 'unknown')}.
+                
+                Provide a structured analysis:
+                
+                1. **Main Subject**: What is the primary landmark or location? Be specific.
+                2. **Architecture/Structure**: Describe buildings, monuments, or structures (e.g., Buddhist stupa, colonial building, modern structure)
+                3. **Natural Features**: Landscape elements (mountains, water, vegetation, beaches)
+                4. **Cultural/Religious Elements**: Any visible symbols, statues, inscriptions, religious markers
+                5. **Distinctive Features**: Unique identifiers that could help pinpoint this exact location
+                6. **Time Period**: If historical, estimate the era (ancient, colonial, modern)
+                7. **Location Category**: Best category (Temple, Beach, Mountain, Fort, National Park, City, Village, etc.)
+                8. **Visible Text**: Any signs, boards, or inscriptions visible (crucial for identification)
+                
+                CRITICAL RULES:
+                - Focus ONLY on what you can SEE in the image
+                - DO NOT guess the location name based on GPS coordinates alone
+                - DO NOT mention specific temple names unless you can see a sign/text in the image
+                - Describe visual features objectively without making location assumptions
+                - If you see text/signs in the image, mention them exactly as written
+                
+                For Sri Lankan context, note if visual features resemble famous landmark types like:
+                - Ancient city ruins (Sigiriya-style, Polonnaruwa-style, etc.)
+                - Religious architecture (Buddhist stupa, Hindu kovil, colonial church, etc.)
+                - Colonial structures (Dutch fort-style, British colonial, etc.)
+                - Natural formations (specific mountain formations, beaches, etc.)
+                
+                Be extremely detailed and precise about VISIBLE features only.
+                """ 
             
-            Provide a structured analysis:
-            
-            1. **Main Subject**: What is the primary landmark or location? Be specific.
-            2. **Architecture/Structure**: Describe buildings, monuments, or structures (e.g., Buddhist stupa, colonial building, modern structure)
-            3. **Natural Features**: Landscape elements (mountains, water, vegetation, beaches)
-            4. **Cultural/Religious Elements**: Any visible symbols, statues, inscriptions, religious markers
-            5. **Distinctive Features**: Unique identifiers that could help pinpoint this exact location
-            6. **Time Period**: If historical, estimate the era (ancient, colonial, modern)
-            7. **Location Category**: Best category (Temple, Beach, Mountain, Fort, National Park, City, Village, etc.)
-            8. **Visible Text**: Any signs, boards, or inscriptions visible (crucial for identification)
-            
-            Focus on factual observations. For Sri Lankan context, consider famous landmarks like:
-            - Ancient cities: Sigiriya, Polonnaruwa, Anuradhapura
-            - Religious sites: Temple of Tooth Kandy, Dambulla Cave Temple
-            - Colonial: Galle Fort, Colombo Fort
-            - Natural: Ella, Nuwara Eliya, Yala, Horton Plains
-            
-            Be extremely detailed and precise.
-            """            
-            response = self.text_model.generate_content([prompt, image_copy])            
-            return response.text
+            response = self.text_model.generate_content([prompt, image_copy])      
+            analysis_result = response.text
+
+            self._visual_analysis = analysis_result    
+            return analysis_result
         
         except Exception as e:
             logger.error(f"Error in visual analysis: {str(e)}")
@@ -508,8 +512,8 @@ class LocationIdentificationAgent:
         """
         try:
             # [Keep existing reverse geocoding code...]
-            lat = gps_location.get("lat") if gps_location else None
-            lng = gps_location.get("lng") if gps_location else None
+            lat = gps_location.get("lat") or gps_location.get("latitude") if gps_location else None
+            lng = gps_location.get("lng") or gps_location.get("longitude") if gps_location else None
             district_name, city_name, nearby_feature = None, None, None
 
             if lat and lng:
@@ -560,10 +564,18 @@ class LocationIdentificationAgent:
             1. Assume the image is from **within or near the {district_name or 'given'} District**.
             2. Give higher confidence to landmarks that actually exist in that district.
 
+            IMPORTANT:
+            - The coordinates map to: {district_name or "unknown district"}.
+            - Therefore the landmark MUST be located in THIS district.
+            - NEVER select a landmark from Colombo, Kandy, Galle, or any other district if GPS is present.
+            - GPS location is the MOST authoritative signal.
+            - Always prioritise {district_name or "the reverse-geocoded district"} over visual resemblance and text description.
+
             You MUST respond ONLY with a valid JSON object in this exact format (no markdown, no preamble):
 
             {{
             "destination_name": "name of the place or landmark",
+            "category": "Temple/Beach/Fort/Mountain/National Park/City/Village/Ancient City/Others",  
             "historical_background": "history, who built it, historical events",
             "cultural_significance": "religious/cultural importance, heritage significance",
             "what_makes_it_special": "unique features, attractions, key elements",
@@ -590,11 +602,12 @@ class LocationIdentificationAgent:
             content_dict = json.loads(generated_text)
             
             # Extract destination name and ensure district is set
-            destination_name = content_dict.get("destination_name", "Unknown")
+            # destination_name = content_dict.get("destination_name", "Unknown")
             
             return {
-                "destination_name": destination_name,
-                "district_name": district_name or "Unknown",
+                "destination_name": content_dict.get("destination_name", "Unknown"),
+                "district_name": district_name or content_dict.get("district_name", "Unknown"),
+                "category": content_dict.get("category", "Others"), 
                 "historical_background": content_dict.get("historical_background", ""),
                 "cultural_significance": content_dict.get("cultural_significance", ""),
                 "what_makes_it_special": content_dict.get("what_makes_it_special", ""),
@@ -602,26 +615,27 @@ class LocationIdentificationAgent:
                 "interesting_facts": content_dict.get("interesting_facts", [])
             }
 
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON parsing error in web search: {str(e)}")
-            return {
-                "destination_name": "Unknown",
-                "district_name": district_name or "Unknown",
-                "historical_background": f"This location is near {geo_context}.",
-                "cultural_significance": "A site of cultural or natural importance in Sri Lanka.",
-                "what_makes_it_special": visual_features[:200] if visual_features else "A scenic location.",
-                "visitor_experience": "Further exploration recommended.",
-                "interesting_facts": [
-                    "Located in a culturally rich region.",
-                    "Typical of Sri Lankan heritage sites.",
-                    "Worth visiting for cultural insights."
-                ]
-            }
+        # except json.JSONDecodeError as e:
+        #     logger.error(f"Error in web search tool: {str(e)}", exc_info=True)
+        #     return {
+        #         "destination_name": "Unknown",
+        #         "district_name": district_name or "Unknown",
+        #         "historical_background": f"This location is near {geo_context}.",
+        #         "cultural_significance": "A site of cultural or natural importance in Sri Lanka.",
+        #         "what_makes_it_special": visual_features[:200] if visual_features else "A scenic location.",
+        #         "visitor_experience": "Further exploration recommended.",
+        #         "interesting_facts": [
+        #             "Located in a culturally rich region.",
+        #             "Typical of Sri Lankan heritage sites.",
+        #             "Worth visiting for cultural insights."
+        #         ]
+        #     }
         except Exception as e:
             logger.error(f"Error in web search tool: {str(e)}", exc_info=True)
             return {
                 "destination_name": "Unknown",
                 "district_name": "Unknown",
+                "category": "Others",
                 "historical_background": "",
                 "cultural_significance": "",
                 "what_makes_it_special": "",
@@ -629,153 +643,556 @@ class LocationIdentificationAgent:
                 "interesting_facts": []
             }
     
-    
+    def _web_search_tool_wrapper(self, input_str: str) -> str:
+        """
+        Wrapper for LangChain agent to call the web search tool.
+        
+        Agent provides string input, this converts it to proper parameters,
+        calls the ORIGINAL _web_search_tool (which uses geolocator),
+        and returns formatted string output for agent to read.
+        """
+        try:
+            import json
+            
+            # Parse agent's input
+            if input_str.strip().startswith('{'):
+                # Agent provided JSON
+                params = json.loads(input_str)
+                query = params.get("query", "")
+                visual_features = params.get("visual_features")
+                gps_location = params.get("gps_location")
+            else:
+                # Agent provided plain text query
+                query = input_str
+                visual_features = None
+                gps_location = None
+            
+            # Use stored context if not provided
+            if not gps_location and self._current_gps:
+                gps_location = self._current_gps
+            
+            # Get visual features from stored context if available
+            if not visual_features:
+                # Try to find visual analysis from previous tool calls
+                # (You might need to store this in self._visual_analysis)
+                visual_features = getattr(self, '_visual_analysis', None)
+            
+            logger.info(f"Web search wrapper called with query: {query}")
+            logger.info(f"GPS location: {gps_location}")
+            
+            # ✅ Call the ORIGINAL method (which uses geolocator!)
+            result_dict = self._web_search_tool(
+                query=query,
+                visual_features=visual_features,
+                gps_location=gps_location
+            )
+            
+            # ✅ Convert dict response to formatted string for agent
+            formatted_output = f"""
+                LOCATION IDENTIFIED VIA WEB SEARCH:
+
+                Destination Name: {result_dict['destination_name']}
+                District: {result_dict['district_name']}
+                Category: {result_dict['category']}
+
+                Historical Background:
+                {result_dict['historical_background']}
+
+                Cultural Significance:
+                {result_dict['cultural_significance']}
+
+                What Makes It Special:
+                {result_dict['what_makes_it_special']}
+
+                Visitor Experience:
+                {result_dict['visitor_experience']}
+
+                Interesting Facts:
+                {chr(10).join(f"  • {fact}" for fact in result_dict['interesting_facts'])}
+
+                ---
+                STATUS: Content generated successfully using web search + reverse geocoding
+                CONFIDENCE: Medium (web-based identification)
+                """
+            
+            logger.info(f"Web search identified: {result_dict['destination_name']}")
+            return formatted_output
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing error in wrapper: {str(e)}")
+            return f"Error: Invalid input format. Expected JSON or plain text query. Error: {str(e)}"
+        
+        except Exception as e:
+            logger.error(f"Error in web search wrapper: {str(e)}", exc_info=True)
+            return f"Error identifying location via web search: {str(e)}"
+        
     async def identify_and_generate_content(
         self,
         image: Image.Image,
         gps_location: Dict[str, float],
     ) -> Dict:
         """
-        Identify location and generate tourist-friendly content from a single image + GPS.
-        Simplified: avoids AgentExecutor and agent_scratchpad.
+        Let the agent orchestrate the workflow intelligently.
         """
         try:
+            # Set context
             self.set_image_and_gps(image, gps_location)
             
-            visual_analysis = self._analyze_image_tool("analyze")
-            # logger.info(f"Visual analysis result (first 200 chars): {visual_analysis[:200]}")
+            # Prepare agent input
+            agent_input = f"""
+            Identify the location in this image and generate tourist content.
             
-            db_search_output = self._search_database_tool("search")
-            # logger.info(f"Database search output:\n{db_search_output}")
+            GPS Coordinates: {gps_location.get('lat')}, {gps_location.get('lng')}
             
-            nearby_output = self._get_nearby_tool("nearby")
-            # logger.info(f"Nearby search output (first 200 chars): {nearby_output[:200]}")
+            Follow the workflow:
+            1. Analyze the image visually
+            2. Search the database using image similarity
+            3. If confidence is MEDIUM/LOW, check nearby locations
+            4. If still uncertain, use web search to identify and generate content
+            5. Compile the final structured output
             
-            #  Decide best location
-            confidence = "Medium"
-            destination_name = "Unknown"
-            district_name = "Unknown"  
-            db_description = ""          
-            category_name = "Others"
+            Return structured information suitable for tourists.
+            """
+            
+            # Run agent
+            result = await self.agent_executor.ainvoke({
+                "input": agent_input
+            })
+            
+            # Parse agent output
+            agent_output = result.get("output", "")
+            intermediate_steps = result.get("intermediate_steps", [])
+            
+            # Determine data sources from intermediate steps
             found_in_db = False
-            use_web_search = False
-
-            logger.info(f"Checking confidence in db_search_output...")
-            lines = db_search_output.splitlines()
-
-            if "HIGH CONFIDENCE" in db_search_output:
-                logger.info("HIGH CONFIDENCE match found!")
-                confidence = "High"
-                found_in_db = True               
-
-                for line in lines:
-                    line_clean = line.strip()
-                    line_lower = line_clean.lower()
-
-                    if "[high confidence" in line_lower:
-                        parts = line_clean.split("[")
-                        if len(parts) > 0:
-                            destination_name = re.sub(r'^\d+\.\s*', '', parts[0].strip())
-
-                    if line_lower.startswith("district:"):
-                        district_name = line_clean.split(":", 1)[1].strip()
-
-                    if line_lower.startswith("category:"):
-                        category_name = line_clean.split(":", 1)[1].strip()
-
-                    if line_lower.startswith("description:"):
-                        db_description = line_clean.split(":", 1)[1].strip()
-                        
-            elif "MEDIUM CONFIDENCE" in db_search_output:
-                logger.info("MEDIUM CONFIDENCE match found!")
-                confidence = "Medium"
-                found_in_db = True
-
-                for line in lines:
-                    line_clean = line.strip()
-                    line_lower = line_clean.lower()
-
-                    if "[high confidence" in line_lower:
-                        parts = line_clean.split("[")
-                        if len(parts) > 0:
-                            destination_name = re.sub(r'^\d+\.\s*', '', parts[0].strip())
-
-                    if line_lower.startswith("district:"):
-                        district_name = line_clean.split(":", 1)[1].strip()
-
-                    if line_lower.startswith("category:"):
-                        category_name = line_clean.split(":", 1)[1].strip()
-
-                    if line_lower.startswith("description:"):
-                        db_description = line_clean.split(":", 1)[1].strip()
-            else:
-                confidence = "Low"
-                use_web_search = True
-                found_in_db = False
-
-            logger.info(f"Found in database: {found_in_db}, Use web search: {use_web_search}")
-            description = ""
-
-            if found_in_db and destination_name != "Unknown":
-                
-                content_dict = self._generate_content_with_gemini(
-                    destination_name=destination_name,
-                    district_name=district_name,
-                    category_name=category_name,
-                    db_description=db_description,
-                    visual_analysis=visual_analysis,
-                    gps_location=gps_location,
-                    confidence=confidence
-                )
-                use_web_search = False
+            used_web_search = False
+            confidence = "Low"
             
-            else:      
-                logger.info("Use web search tool for unknown location...")
-                web_result = self._web_search_tool(
-                    query=destination_name ,
-                    visual_features=visual_analysis,
-                    gps_location=gps_location
-                )
-                use_web_search = True
-
-                destination_name = web_result.get("destination_name", "Unknown")
-                district_name = web_result.get("district_name", "Unknown")
-                content_dict = {
-                    "historical_background": web_result.get("historical_background", ""),
-                    "cultural_significance": web_result.get("cultural_significance", ""),
-                    "what_makes_it_special": web_result.get("what_makes_it_special", ""),
-                    "visitor_experience": web_result.get("visitor_experience", ""),
-                    "interesting_facts": web_result.get("interesting_facts", [])
-                }
-
-            result = {
+            for step in intermediate_steps:
+                tool_name = step[0].tool if hasattr(step[0], 'tool') else ""
+                tool_output = str(step[1])
+                
+                if tool_name == "SearchDatabaseByImage":
+                    if "HIGH CONFIDENCE" in tool_output:
+                        found_in_db = True
+                        confidence = "High"
+                    elif "MEDIUM CONFIDENCE" in tool_output:
+                        found_in_db = True
+                        confidence = "Medium"
+                
+                if tool_name == "SearchWebForLocation":
+                    used_web_search = True
+            
+            # Parse structured content from agent output
+            # (You can improve this with structured output parsing)
+            parsed_content = self._parse_agent_output(agent_output, intermediate_steps)
+            
+            return {
                 "success": True,
-                "destination_name": destination_name,
-                "district_name": district_name,
-                "category": category_name,
-                "historical_background": content_dict.get("historical_background", ""),
-                "cultural_significance": content_dict.get("cultural_significance", ""),
-                "what_makes_it_special": content_dict.get("what_makes_it_special", ""),
-                "visitor_experience": content_dict.get("visitor_experience", ""),
-                "interesting_facts": content_dict.get("interesting_facts", []),
+                "destination_name": parsed_content.get("destination_name", "Unknown"),
+                "district_name": parsed_content.get("district_name", "Unknown"),
+                "category": parsed_content.get("category", "Others"),
+                "historical_background": parsed_content.get("historical_background", ""),
+                "cultural_significance": parsed_content.get("cultural_significance", ""),
+                "what_makes_it_special": parsed_content.get("what_makes_it_special", ""),
+                "visitor_experience": parsed_content.get("visitor_experience", ""),
+                "interesting_facts": parsed_content.get("interesting_facts", []),
                 "confidence": confidence,
                 "found_in_db": found_in_db,
-                "used_web_search": use_web_search,
-                "visual_analysis": visual_analysis,
-                "database_output": db_search_output,
-                "nearby_output": nearby_output
+                "used_web_search": used_web_search,
             }
             
-            logger.info(f"Final extracted values: name={destination_name}, district={district_name}, category={category_name}, confidence={confidence}")
-            return result
-
         except Exception as e:
-            logger.error(f"Error in agent execution: {str(e)}", exc_info=True)
+            logger.error(f"Agent execution error: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e),                                
+                'error': str(e),
             }
     
+    def _parse_agent_output(self, agent_output: str, intermediate_steps: list) -> dict:
+        """
+        Extract structured content from agent's reasoning and tool outputs.
+        """
+        parsed = {
+            "destination_name": "Unknown",
+            "district_name": "Unknown",
+            "category": "Others",
+            "historical_background": "",
+            "cultural_significance": "",
+            "what_makes_it_special": "",
+            "visitor_experience": "",
+            "interesting_facts": []
+        }
+        
+        # Check if web search was used
+        web_search_used = False
+        for step in intermediate_steps:
+            tool_name = step[0].tool if hasattr(step[0], 'tool') else ""
+            
+            if tool_name == "SearchWebForLocation":
+                web_search_used = True
+                tool_output = str(step[1])
+                
+                # FIXED: Match actual field names in wrapper output
+                if "Destination Name:" in tool_output:
+                    parsed["destination_name"] = self._extract_field(tool_output, "Destination Name:")
+                if "District:" in tool_output:
+                    parsed["district_name"] = self._extract_field(tool_output, "District:")
+                if "Category:" in tool_output:  
+                    parsed["category"] = self._extract_field(tool_output, "Category:")
+                            
+                if "Historical Background:" in tool_output:
+                    parsed["historical_background"] = self._extract_multiline_field(tool_output, "Historical Background:", "Cultural Significance:")
+                if "Cultural Significance:" in tool_output:
+                    parsed["cultural_significance"] = self._extract_multiline_field(tool_output, "Cultural Significance:", "What Makes It Special:")
+                if "What Makes It Special:" in tool_output:
+                    parsed["what_makes_it_special"] = self._extract_multiline_field(tool_output, "What Makes It Special:", "Visitor Experience:")
+                if "Visitor Experience:" in tool_output:
+                    parsed["visitor_experience"] = self._extract_multiline_field(tool_output, "Visitor Experience:", "Interesting Facts:")
+                if "Interesting Facts:" in tool_output:
+                    # FIXED: Extract bullet points correctly
+                    parsed["interesting_facts"] = self._extract_bullet_points(tool_output, "Interesting Facts:")
+                
+                break  # Web search has all info, no need to continue
+        
+        # If web search wasn't used, extract from database + generate content
+        if not web_search_used:
+            for step in intermediate_steps:
+                tool_name = step[0].tool if hasattr(step[0], 'tool') else ""
+                
+                if tool_name == "SearchDatabaseByImage":
+                    db_output = str(step[1])
+                    
+                    if "HIGH CONFIDENCE" in db_output or "MEDIUM CONFIDENCE" in db_output:
+                        #  FIXED: Extract from numbered list format
+                        parsed["destination_name"] = self._extract_destination_name(db_output)
+                        parsed["district_name"] = self._extract_field(db_output, "District:")
+                        parsed["category"] = self._extract_field(db_output, "Category:")
+                        db_description = self._extract_field(db_output, "Description:")
+                        
+                        # Get visual analysis
+                        visual_analysis = ""
+                        for s in intermediate_steps:
+                            if s[0].tool == "AnalyzeImageVisually":
+                                visual_analysis = str(s[1])
+                                break
+                        
+                        # Generate content using Gemini
+                        logger.info(f"Generating content for DB match: {parsed['destination_name']}")
+                        content_dict = self._generate_content_with_gemini(
+                            destination_name=parsed["destination_name"],
+                            district_name=parsed["district_name"],
+                            category_name=parsed["category"],
+                            db_description=db_description,
+                            visual_analysis=visual_analysis,
+                            gps_location=self._current_gps,
+                            confidence="High" if "HIGH CONFIDENCE" in db_output else "Medium"
+                        )
+                        
+                        # Update with generated content
+                        parsed["historical_background"] = content_dict.get("historical_background", "")
+                        parsed["cultural_significance"] = content_dict.get("cultural_significance", "")
+                        parsed["what_makes_it_special"] = content_dict.get("what_makes_it_special", "")
+                        parsed["visitor_experience"] = content_dict.get("visitor_experience", "")
+                        parsed["interesting_facts"] = content_dict.get("interesting_facts", [])
+                        
+                        break
+        
+        return parsed
+    
+    # async def identify_and_generate_content(
+    #     self,
+    #     image: Image.Image,
+    #     gps_location: Dict[str, float],
+    # ) -> Dict:
+    #     """
+    #     Identify location and generate content using direct tool calls.
+    #     More reliable than agent-based approach.
+    #     """
+    #     try:
+    #         # Set context
+    #         self.set_image_and_gps(image, gps_location)
+            
+    #         # Step 1: Visual Analysis
+    #         logger.info("Step 1: Analyzing image visually...")
+    #         visual_analysis = self._analyze_image_tool("analyze")
+            
+    #         # Step 2: Database Search
+    #         logger.info("Step 2: Searching database...")
+    #         db_search_output = self._search_database_tool("search")
+            
+    #         # Step 3: Determine confidence
+    #         found_in_db = False
+    #         used_web_search = False
+    #         confidence = "Low"
+            
+    #         if "HIGH CONFIDENCE" in db_search_output:
+    #             confidence = "High"
+    #             found_in_db = True
+    #             logger.info("HIGH confidence match found in database")
+    #         elif "MEDIUM CONFIDENCE" in db_search_output:
+    #             confidence = "Medium"
+    #             found_in_db = True
+    #             logger.info("MEDIUM confidence match - verifying with nearby locations")
+    #             nearby_output = self._get_nearby_tool("nearby")
+    #         elif "No matching locations found" in db_search_output:
+    #             confidence = "Low"
+    #             logger.info("No database matches - using web search")
+    #             nearby_output = self._get_nearby_tool("nearby")
+    #             used_web_search = True
+            
+    #         # Step 4: Generate content based on confidence
+    #         if found_in_db and confidence in ["High", "Medium"]:
+    #             # Extract from database output
+    #             parsed_content = self._parse_db_search_output(db_search_output, visual_analysis)
+    #         else:
+    #             # Use web search
+    #             used_web_search = True
+    #             web_result = self._web_search_tool(
+    #                 query="",
+    #                 visual_features=visual_analysis,
+    #                 gps_location=gps_location
+    #             )
+    #             parsed_content = {
+    #                 "destination_name": web_result.get("destination_name", "Unknown"),
+    #                 "district_name": web_result.get("district_name", "Unknown"),
+    #                 "category": web_result.get("category", "Others"),
+    #                 "historical_background": web_result.get("historical_background", ""),
+    #                 "cultural_significance": web_result.get("cultural_significance", ""),
+    #                 "what_makes_it_special": web_result.get("what_makes_it_special", ""),
+    #                 "visitor_experience": web_result.get("visitor_experience", ""),
+    #                 "interesting_facts": web_result.get("interesting_facts", [])
+    #             }
+            
+    #         return {
+    #             "success": True,
+    #             "destination_name": parsed_content.get("destination_name", "Unknown"),
+    #             "district_name": parsed_content.get("district_name", "Unknown"),
+    #             "category": parsed_content.get("category", "Others"),
+    #             "historical_background": parsed_content.get("historical_background", ""),
+    #             "cultural_significance": parsed_content.get("cultural_significance", ""),
+    #             "what_makes_it_special": parsed_content.get("what_makes_it_special", ""),
+    #             "visitor_experience": parsed_content.get("visitor_experience", ""),
+    #             "interesting_facts": parsed_content.get("interesting_facts", []),
+    #             "confidence": confidence,
+    #             "found_in_db": found_in_db,
+    #             "used_web_search": used_web_search,
+    #         }
+            
+    #     except Exception as e:
+    #         logger.error(f"Execution error: {str(e)}", exc_info=True)
+    #         return {
+    #             'success': False,
+    #             'error': str(e),
+    #         }
+
+    # def _parse_db_search_output(self, db_output: str, visual_analysis: str) -> dict:
+    #     """Extract data from database search output and generate content"""
+    #     parsed = {
+    #         "destination_name": "Unknown",
+    #         "district_name": "Unknown",
+    #         "category": "Others",
+    #         "historical_background": "",
+    #         "cultural_significance": "",
+    #         "what_makes_it_special": "",
+    #         "visitor_experience": "",
+    #         "interesting_facts": []
+    #     }
+        
+    #     # Extract from db output
+    #     parsed["destination_name"] = self._extract_destination_name(db_output)
+    #     parsed["district_name"] = self._extract_field(db_output, "District:")
+    #     parsed["category"] = self._extract_field(db_output, "Category:")
+    #     db_description = self._extract_field(db_output, "Description:")
+        
+    #     # Generate content with Gemini
+    #     logger.info(f"Generating content for: {parsed['destination_name']}")
+    #     content_dict = self._generate_content_with_gemini(
+    #         destination_name=parsed["destination_name"],
+    #         district_name=parsed["district_name"],
+    #         category_name=parsed["category"],
+    #         db_description=db_description,
+    #         visual_analysis=visual_analysis,
+    #         gps_location=self._current_gps,
+    #         confidence="High" if "HIGH CONFIDENCE" in db_output else "Medium"
+    #     )
+        
+    #     # Update parsed with generated content
+    #     parsed.update(content_dict)
+        
+    #     return parsed
+        
+    # def _parse_agent_output(self, agent_output: str, intermediate_steps: list) -> dict:
+    #     """
+    #     Extract structured content from agent's reasoning and tool outputs.
+    #     """
+    #     parsed = {
+    #         "destination_name": "Unknown",
+    #         "district_name": "Unknown",
+    #         "category": "Others",
+    #         "historical_background": "",
+    #         "cultural_significance": "",
+    #         "what_makes_it_special": "",
+    #         "visitor_experience": "",
+    #         "interesting_facts": []
+    #     }
+        
+    #     # Check if web search was used
+    #     web_search_used = False
+    #     for step in intermediate_steps:
+    #         tool_name = step[0].tool if hasattr(step[0], 'tool') else ""
+            
+    #         if tool_name == "SearchWebForLocation":
+    #             web_search_used = True
+    #             tool_output = str(step[1])
+                
+    #             # FIXED: Match actual field names in wrapper output
+    #             if "Destination Name:" in tool_output:
+    #                 parsed["destination_name"] = self._extract_field(tool_output, "Destination Name:")
+    #             if "District:" in tool_output:
+    #                 parsed["district_name"] = self._extract_field(tool_output, "District:")
+    #             if "Category:" in tool_output:  
+    #                 parsed["category"] = self._extract_field(tool_output, "Category:")
+                            
+    #             if "Historical Background:" in tool_output:
+    #                 parsed["historical_background"] = self._extract_multiline_field(tool_output, "Historical Background:", "Cultural Significance:")
+    #             if "Cultural Significance:" in tool_output:
+    #                 parsed["cultural_significance"] = self._extract_multiline_field(tool_output, "Cultural Significance:", "What Makes It Special:")
+    #             if "What Makes It Special:" in tool_output:
+    #                 parsed["what_makes_it_special"] = self._extract_multiline_field(tool_output, "What Makes It Special:", "Visitor Experience:")
+    #             if "Visitor Experience:" in tool_output:
+    #                 parsed["visitor_experience"] = self._extract_multiline_field(tool_output, "Visitor Experience:", "Interesting Facts:")
+    #             if "Interesting Facts:" in tool_output:
+    #                 # FIXED: Extract bullet points correctly
+    #                 parsed["interesting_facts"] = self._extract_bullet_points(tool_output, "Interesting Facts:")
+                
+    #             break  # Web search has all info, no need to continue
+        
+    #     # If web search wasn't used, extract from database + generate content
+    #     if not web_search_used:
+    #         for step in intermediate_steps:
+    #             tool_name = step[0].tool if hasattr(step[0], 'tool') else ""
+                
+    #             if tool_name == "SearchDatabaseByImage":
+    #                 db_output = str(step[1])
+                    
+    #                 if "HIGH CONFIDENCE" in db_output or "MEDIUM CONFIDENCE" in db_output:
+    #                     #  FIXED: Extract from numbered list format
+    #                     parsed["destination_name"] = self._extract_destination_name(db_output)
+    #                     parsed["district_name"] = self._extract_field(db_output, "District:")
+    #                     parsed["category"] = self._extract_field(db_output, "Category:")
+    #                     db_description = self._extract_field(db_output, "Description:")
+                        
+    #                     # Get visual analysis
+    #                     visual_analysis = ""
+    #                     for s in intermediate_steps:
+    #                         if s[0].tool == "AnalyzeImageVisually":
+    #                             visual_analysis = str(s[1])
+    #                             break
+                        
+    #                     # Generate content using Gemini
+    #                     logger.info(f"Generating content for DB match: {parsed['destination_name']}")
+    #                     content_dict = self._generate_content_with_gemini(
+    #                         destination_name=parsed["destination_name"],
+    #                         district_name=parsed["district_name"],
+    #                         category_name=parsed["category"],
+    #                         db_description=db_description,
+    #                         visual_analysis=visual_analysis,
+    #                         gps_location=self._current_gps,
+    #                         confidence="High" if "HIGH CONFIDENCE" in db_output else "Medium"
+    #                     )
+                        
+    #                     # Update with generated content
+    #                     parsed["historical_background"] = content_dict.get("historical_background", "")
+    #                     parsed["cultural_significance"] = content_dict.get("cultural_significance", "")
+    #                     parsed["what_makes_it_special"] = content_dict.get("what_makes_it_special", "")
+    #                     parsed["visitor_experience"] = content_dict.get("visitor_experience", "")
+    #                     parsed["interesting_facts"] = content_dict.get("interesting_facts", [])
+                        
+    #                     break
+        
+    #     return parsed
+
+    
+    def _extract_field(self, text: str, field_name: str) -> str:
+        """Helper to extract single-line field value"""
+        try:
+            lines = text.split('\n')
+            for line in lines:
+                line = line.strip()
+                if line.startswith(field_name):
+                    return line.split(':', 1)[1].strip()
+            return ""
+        except:
+            return ""
+
+    def _extract_destination_name(self, db_output: str) -> str:
+        """Helper to extract destination name from database search output"""
+        try:
+            # Format: "1. Sigiriya [HIGH CONFIDENCE: 92%]"
+            lines = db_output.split('\n')
+            for line in lines:
+                line = line.strip()
+                if line.startswith('1.'):
+                    # Remove "1. " prefix and everything after "["
+                    name = line[3:].split('[')[0].strip()
+                    return name
+            return "Unknown"
+        except:
+            return "Unknown"
+    
+    def _extract_multiline_field(self, text: str, start_marker: str, end_marker: str) -> str:
+        """Helper to extract multi-line field content between two markers"""
+        try:
+            start_idx = text.find(start_marker)
+            if start_idx == -1:
+                return ""
+            
+            start_idx = text.find('\n', start_idx) + 1
+            end_idx = text.find(end_marker, start_idx)
+            
+            if end_idx == -1:
+                # If no end marker, take until next major section or end
+                content = text[start_idx:].strip()
+            else:
+                content = text[start_idx:end_idx].strip()
+            
+            # Clean up the content
+            return content.strip()
+        except:
+            return ""
+
+    def _extract_bullet_points(self, text: str, marker: str) -> list:
+        """Helper to extract bullet-pointed list"""
+        try:
+            start_idx = text.find(marker)
+            if start_idx == -1:
+                return []
+            
+            # Find the section after marker until "---" or end
+            start_idx = text.find('\n', start_idx) + 1
+            end_idx = text.find('---', start_idx)
+            
+            if end_idx == -1:
+                section = text[start_idx:]
+            else:
+                section = text[start_idx:end_idx]
+            
+            # Extract lines that start with bullet points
+            facts = []
+            for line in section.split('\n'):
+                line = line.strip()
+                if line.startswith('•') or line.startswith('-') or line.startswith('*'):
+                    fact = line.lstrip('•-* ').strip()
+                    if fact:
+                        facts.append(fact)
+            
+            return facts
+        except:
+            return []
+
+    
+
 
 # Singleton instance
 _agent_service = None
@@ -786,3 +1203,5 @@ def get_agent_service() -> LocationIdentificationAgent:
     if _agent_service is None:
         _agent_service = LocationIdentificationAgent()
     return _agent_service
+    
+    
