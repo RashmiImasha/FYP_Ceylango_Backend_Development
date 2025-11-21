@@ -64,15 +64,11 @@ class DatabaseError(TripPlanningException):
     pass
 
 async def validate_trip_request(request: TripPlanRequest) -> None:
-    """
-    Validate trip request before processing
-    """
-    # Validate districts exist in database
+   
     valid_districts = []
     try:
         # Make district checks parallel and async
         async def check_district(district: str) -> tuple:
-            """Check if district exists in database"""
             loop = asyncio.get_event_loop()
             docs = await loop.run_in_executor(
                 None,
@@ -109,7 +105,6 @@ async def validate_trip_request(request: TripPlanRequest) -> None:
         logger.error(f"District validation error: {e}")
         raise ValueError("Failed to validate districts")
     
-    # Validate date range is reasonable (CPU-bound, no async needed)
     start = datetime.strptime(request.start_date, "%Y-%m-%d")
     end = datetime.strptime(request.end_date, "%Y-%m-%d")
     duration_days = (end - start).days + 1
@@ -130,9 +125,8 @@ def create_rule_based_itinerary(
     end_date: str,
     group_type: str
 ) -> Dict:
-    """
-    Fallback rule-based planner when LLM fails
-    """
+    
+    # Fallback rule-based planner when LLM fails
     duration_days = (datetime.strptime(end_date, "%Y-%m-%d") - 
                     datetime.strptime(start_date, "%Y-%m-%d")).days + 1
     
@@ -270,9 +264,8 @@ class DestinationRetriever:
             return [0.0] * dim
 
     async def query_pinecone(self, embedding, districts: List[str], categories: List[str] = None, top_k=30):
-        """
-        Query Pinecone with district and optional category filters
-        """
+        
+        #  Query Pinecone with district and category(optional) filters        
         filter_dict = {}
 
         if districts:
@@ -305,15 +298,14 @@ class DestinationRetriever:
             return []
 
     async def enrich_with_firebase(self, destination_ids: List[str]) -> List[Dict]:
-        """
-        Fetch full destination data from Firebase with parallel batches
-        """        
+       
+        # Fetch full destination data from Firebase with parallel batches               
         try:
             destinations = []
             batch_size = 10
             
             async def fetch_batch(batch_ids):
-                """Fetch a single batch"""
+                # Fetch a single batch
                 loop = asyncio.get_event_loop()
                 docs = await loop.run_in_executor(
                     None,
@@ -393,8 +385,8 @@ class DestinationRetriever:
         return final_results
     
 class TripPreprocessor:
-    """Handles distance calculations and business rules"""
 
+    # Handles distance calculations and business rules
     _category_cache: Dict[str, np.ndarray] = {}
     
     def __init__(self, services: ServicesInitializer):        
@@ -478,7 +470,7 @@ class TripPreprocessor:
             
             # Family-friendly filter
             if group_type == "family":
-                blocked_keywords = ['nightlife', 'bar', 'club', 'casino', 'adult']
+                blocked_keywords = ['bar', 'club', 'casino', 'adult']
                 if any(keyword in category for keyword in blocked_keywords):
                     continue
             
@@ -503,7 +495,7 @@ class TripPreprocessor:
                 group_type
             )
             
-            # Composite score
+            # Composite score calculation
             composite_score = (
                 dest.get('similarity_score', 0) * TripPlanningConfig.SIMILARITY_WEIGHT +
                 interest_score * TripPlanningConfig.INTEREST_WEIGHT +
@@ -547,7 +539,6 @@ class TripPlanningAgent:
         buffer_time = int(total_minutes * TripPlanningConfig.BUFFER_TIME_PERCENTAGE)
         usable_time = total_minutes - meal_time - buffer_time
         
-        # Prepare items list (destinations + services)
         item_list = []
         for idx, item in enumerate(items[:TripPlanningConfig.MAX_ITEMS_FOR_PLANNING]):  
             item_data = {
@@ -711,7 +702,6 @@ class TripPlanningAgent:
                 group_type=trip_request['group_type']
             )
             return fallback_itinerary 
-
 
 class ItineraryPostProcessor:
     

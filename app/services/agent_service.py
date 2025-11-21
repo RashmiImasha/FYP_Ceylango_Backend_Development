@@ -151,8 +151,7 @@ class LocationIdentificationAgent:
                     "fascinating fact 1",
                     "fascinating fact 2",
                     "fascinating fact 3"
-                ]
-            
+                ]            
             }}
 
             GUIDELINES:
@@ -601,9 +600,6 @@ class LocationIdentificationAgent:
             import json
             content_dict = json.loads(generated_text)
             
-            # Extract destination name and ensure district is set
-            # destination_name = content_dict.get("destination_name", "Unknown")
-            
             return {
                 "destination_name": content_dict.get("destination_name", "Unknown"),
                 "district_name": district_name or content_dict.get("district_name", "Unknown"),
@@ -615,21 +611,6 @@ class LocationIdentificationAgent:
                 "interesting_facts": content_dict.get("interesting_facts", [])
             }
 
-        # except json.JSONDecodeError as e:
-        #     logger.error(f"Error in web search tool: {str(e)}", exc_info=True)
-        #     return {
-        #         "destination_name": "Unknown",
-        #         "district_name": district_name or "Unknown",
-        #         "historical_background": f"This location is near {geo_context}.",
-        #         "cultural_significance": "A site of cultural or natural importance in Sri Lanka.",
-        #         "what_makes_it_special": visual_features[:200] if visual_features else "A scenic location.",
-        #         "visitor_experience": "Further exploration recommended.",
-        #         "interesting_facts": [
-        #             "Located in a culturally rich region.",
-        #             "Typical of Sri Lankan heritage sites.",
-        #             "Worth visiting for cultural insights."
-        #         ]
-        #     }
         except Exception as e:
             logger.error(f"Error in web search tool: {str(e)}", exc_info=True)
             return {
@@ -899,221 +880,7 @@ class LocationIdentificationAgent:
                         break
         
         return parsed
-    
-    # async def identify_and_generate_content(
-    #     self,
-    #     image: Image.Image,
-    #     gps_location: Dict[str, float],
-    # ) -> Dict:
-    #     """
-    #     Identify location and generate content using direct tool calls.
-    #     More reliable than agent-based approach.
-    #     """
-    #     try:
-    #         # Set context
-    #         self.set_image_and_gps(image, gps_location)
-            
-    #         # Step 1: Visual Analysis
-    #         logger.info("Step 1: Analyzing image visually...")
-    #         visual_analysis = self._analyze_image_tool("analyze")
-            
-    #         # Step 2: Database Search
-    #         logger.info("Step 2: Searching database...")
-    #         db_search_output = self._search_database_tool("search")
-            
-    #         # Step 3: Determine confidence
-    #         found_in_db = False
-    #         used_web_search = False
-    #         confidence = "Low"
-            
-    #         if "HIGH CONFIDENCE" in db_search_output:
-    #             confidence = "High"
-    #             found_in_db = True
-    #             logger.info("HIGH confidence match found in database")
-    #         elif "MEDIUM CONFIDENCE" in db_search_output:
-    #             confidence = "Medium"
-    #             found_in_db = True
-    #             logger.info("MEDIUM confidence match - verifying with nearby locations")
-    #             nearby_output = self._get_nearby_tool("nearby")
-    #         elif "No matching locations found" in db_search_output:
-    #             confidence = "Low"
-    #             logger.info("No database matches - using web search")
-    #             nearby_output = self._get_nearby_tool("nearby")
-    #             used_web_search = True
-            
-    #         # Step 4: Generate content based on confidence
-    #         if found_in_db and confidence in ["High", "Medium"]:
-    #             # Extract from database output
-    #             parsed_content = self._parse_db_search_output(db_search_output, visual_analysis)
-    #         else:
-    #             # Use web search
-    #             used_web_search = True
-    #             web_result = self._web_search_tool(
-    #                 query="",
-    #                 visual_features=visual_analysis,
-    #                 gps_location=gps_location
-    #             )
-    #             parsed_content = {
-    #                 "destination_name": web_result.get("destination_name", "Unknown"),
-    #                 "district_name": web_result.get("district_name", "Unknown"),
-    #                 "category": web_result.get("category", "Others"),
-    #                 "historical_background": web_result.get("historical_background", ""),
-    #                 "cultural_significance": web_result.get("cultural_significance", ""),
-    #                 "what_makes_it_special": web_result.get("what_makes_it_special", ""),
-    #                 "visitor_experience": web_result.get("visitor_experience", ""),
-    #                 "interesting_facts": web_result.get("interesting_facts", [])
-    #             }
-            
-    #         return {
-    #             "success": True,
-    #             "destination_name": parsed_content.get("destination_name", "Unknown"),
-    #             "district_name": parsed_content.get("district_name", "Unknown"),
-    #             "category": parsed_content.get("category", "Others"),
-    #             "historical_background": parsed_content.get("historical_background", ""),
-    #             "cultural_significance": parsed_content.get("cultural_significance", ""),
-    #             "what_makes_it_special": parsed_content.get("what_makes_it_special", ""),
-    #             "visitor_experience": parsed_content.get("visitor_experience", ""),
-    #             "interesting_facts": parsed_content.get("interesting_facts", []),
-    #             "confidence": confidence,
-    #             "found_in_db": found_in_db,
-    #             "used_web_search": used_web_search,
-    #         }
-            
-    #     except Exception as e:
-    #         logger.error(f"Execution error: {str(e)}", exc_info=True)
-    #         return {
-    #             'success': False,
-    #             'error': str(e),
-    #         }
-
-    # def _parse_db_search_output(self, db_output: str, visual_analysis: str) -> dict:
-    #     """Extract data from database search output and generate content"""
-    #     parsed = {
-    #         "destination_name": "Unknown",
-    #         "district_name": "Unknown",
-    #         "category": "Others",
-    #         "historical_background": "",
-    #         "cultural_significance": "",
-    #         "what_makes_it_special": "",
-    #         "visitor_experience": "",
-    #         "interesting_facts": []
-    #     }
-        
-    #     # Extract from db output
-    #     parsed["destination_name"] = self._extract_destination_name(db_output)
-    #     parsed["district_name"] = self._extract_field(db_output, "District:")
-    #     parsed["category"] = self._extract_field(db_output, "Category:")
-    #     db_description = self._extract_field(db_output, "Description:")
-        
-    #     # Generate content with Gemini
-    #     logger.info(f"Generating content for: {parsed['destination_name']}")
-    #     content_dict = self._generate_content_with_gemini(
-    #         destination_name=parsed["destination_name"],
-    #         district_name=parsed["district_name"],
-    #         category_name=parsed["category"],
-    #         db_description=db_description,
-    #         visual_analysis=visual_analysis,
-    #         gps_location=self._current_gps,
-    #         confidence="High" if "HIGH CONFIDENCE" in db_output else "Medium"
-    #     )
-        
-    #     # Update parsed with generated content
-    #     parsed.update(content_dict)
-        
-    #     return parsed
-        
-    # def _parse_agent_output(self, agent_output: str, intermediate_steps: list) -> dict:
-    #     """
-    #     Extract structured content from agent's reasoning and tool outputs.
-    #     """
-    #     parsed = {
-    #         "destination_name": "Unknown",
-    #         "district_name": "Unknown",
-    #         "category": "Others",
-    #         "historical_background": "",
-    #         "cultural_significance": "",
-    #         "what_makes_it_special": "",
-    #         "visitor_experience": "",
-    #         "interesting_facts": []
-    #     }
-        
-    #     # Check if web search was used
-    #     web_search_used = False
-    #     for step in intermediate_steps:
-    #         tool_name = step[0].tool if hasattr(step[0], 'tool') else ""
-            
-    #         if tool_name == "SearchWebForLocation":
-    #             web_search_used = True
-    #             tool_output = str(step[1])
-                
-    #             # FIXED: Match actual field names in wrapper output
-    #             if "Destination Name:" in tool_output:
-    #                 parsed["destination_name"] = self._extract_field(tool_output, "Destination Name:")
-    #             if "District:" in tool_output:
-    #                 parsed["district_name"] = self._extract_field(tool_output, "District:")
-    #             if "Category:" in tool_output:  
-    #                 parsed["category"] = self._extract_field(tool_output, "Category:")
-                            
-    #             if "Historical Background:" in tool_output:
-    #                 parsed["historical_background"] = self._extract_multiline_field(tool_output, "Historical Background:", "Cultural Significance:")
-    #             if "Cultural Significance:" in tool_output:
-    #                 parsed["cultural_significance"] = self._extract_multiline_field(tool_output, "Cultural Significance:", "What Makes It Special:")
-    #             if "What Makes It Special:" in tool_output:
-    #                 parsed["what_makes_it_special"] = self._extract_multiline_field(tool_output, "What Makes It Special:", "Visitor Experience:")
-    #             if "Visitor Experience:" in tool_output:
-    #                 parsed["visitor_experience"] = self._extract_multiline_field(tool_output, "Visitor Experience:", "Interesting Facts:")
-    #             if "Interesting Facts:" in tool_output:
-    #                 # FIXED: Extract bullet points correctly
-    #                 parsed["interesting_facts"] = self._extract_bullet_points(tool_output, "Interesting Facts:")
-                
-    #             break  # Web search has all info, no need to continue
-        
-    #     # If web search wasn't used, extract from database + generate content
-    #     if not web_search_used:
-    #         for step in intermediate_steps:
-    #             tool_name = step[0].tool if hasattr(step[0], 'tool') else ""
-                
-    #             if tool_name == "SearchDatabaseByImage":
-    #                 db_output = str(step[1])
-                    
-    #                 if "HIGH CONFIDENCE" in db_output or "MEDIUM CONFIDENCE" in db_output:
-    #                     #  FIXED: Extract from numbered list format
-    #                     parsed["destination_name"] = self._extract_destination_name(db_output)
-    #                     parsed["district_name"] = self._extract_field(db_output, "District:")
-    #                     parsed["category"] = self._extract_field(db_output, "Category:")
-    #                     db_description = self._extract_field(db_output, "Description:")
-                        
-    #                     # Get visual analysis
-    #                     visual_analysis = ""
-    #                     for s in intermediate_steps:
-    #                         if s[0].tool == "AnalyzeImageVisually":
-    #                             visual_analysis = str(s[1])
-    #                             break
-                        
-    #                     # Generate content using Gemini
-    #                     logger.info(f"Generating content for DB match: {parsed['destination_name']}")
-    #                     content_dict = self._generate_content_with_gemini(
-    #                         destination_name=parsed["destination_name"],
-    #                         district_name=parsed["district_name"],
-    #                         category_name=parsed["category"],
-    #                         db_description=db_description,
-    #                         visual_analysis=visual_analysis,
-    #                         gps_location=self._current_gps,
-    #                         confidence="High" if "HIGH CONFIDENCE" in db_output else "Medium"
-    #                     )
-                        
-    #                     # Update with generated content
-    #                     parsed["historical_background"] = content_dict.get("historical_background", "")
-    #                     parsed["cultural_significance"] = content_dict.get("cultural_significance", "")
-    #                     parsed["what_makes_it_special"] = content_dict.get("what_makes_it_special", "")
-    #                     parsed["visitor_experience"] = content_dict.get("visitor_experience", "")
-    #                     parsed["interesting_facts"] = content_dict.get("interesting_facts", [])
-                        
-    #                     break
-        
-    #     return parsed
-
-    
+ 
     def _extract_field(self, text: str, field_name: str) -> str:
         """Helper to extract single-line field value"""
         try:
