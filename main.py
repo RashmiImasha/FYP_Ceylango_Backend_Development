@@ -69,9 +69,7 @@ def root():
 if __name__ == "__main__" :
 
     if len(sys.argv) > 1 and sys.argv[1] == "run_eval":
-        # Run the evaluation script
-        from app.test.test_agent_evaluator import run_evaluation_demo  # import your script
-        asyncio.run(run_evaluation_demo())
+        from app.test.test_agent_evaluator import run_evaluation_demo  
     
     else:
         uvicorn.run(app, host = "0.0.0.0", port = 9090, log_level = "info")
