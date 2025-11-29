@@ -29,16 +29,13 @@ class PineconeService:
         self.index = self.pc.Index(self.index_name)
 
         # initialize CLIP model for image embeddings
-        logger.info("Loading CLIP model...")
         self.clip_model = CLIPModel.from_pretrained(settings.CLIP_MODEL)
         self.clip_processor = CLIPProcessor.from_pretrained(settings.CLIP_MODEL)
         self.clip_model.eval()
 
         # initialize text embedding model 
-        logger.info("Loading text embedding model...")
         self.text_embedModel = SentenceTransformer(settings.TEXT_EMBEDDING_MODEL)
         
-        logger.info("PineconeService initialized successfully...")
 
     def generate_image_embedding(self, image_source) -> List[float]:
         """
@@ -50,60 +47,49 @@ class PineconeService:
         """
         
         try:
-            # logger.info(f"=== generate_image_embedding START ===")
-            # logger.info(f"image_source type: {type(image_source)}")
-            # logger.info(f"image_source is None: {image_source is None}")
-            
-            # Validate input is not None FIRST
-            if image_source is None:
-                logger.error("generate_image_embedding received None as image_source")
-                raise ValueError("Image source cannot be None")
-            
             image = None
             
+            # Handle different input types
             if isinstance(image_source, str):   # URL
-                logger.info(f"Processing as URL: {image_source[:100]}")
                 response = requests.get(image_source, timeout=10)
                 response.raise_for_status()
-                image = Image.open(io.BytesIO(response.content)).convert('RGB')
+                image = Image.open(io.BytesIO(response.content))
                 
             elif isinstance(image_source, bytes):   # Bytes
-                logger.info(f"Processing as bytes: {len(image_source)} bytes")
-                image = Image.open(io.BytesIO(image_source)).convert('RGB')
+                image = Image.open(io.BytesIO(image_source))
                 
             elif isinstance(image_source, Image.Image):   # PIL Image
-                logger.info(f"Processing as PIL Image")
-                # logger.info(f"Input image size: {image_source.size}, mode: {image_source.mode}")
-                image = image_source.convert('RGB')
-                # logger.info(f"After convert: image is None={image is None}")
+                image = image_source
                 
             else:
-                logger.error(f"Unsupported type: {type(image_source)}")
-                raise ValueError(f"Unsupported image source type: {type(image_source)}")
+                raise ValueError(f"Unsupported type: {type(image_source)}")
             
-            # Verify image was successfully created
+            # Validate image
             if image is None:
-                logger.error("Image is None after processing")
-                raise ValueError("Failed to create image object from source")
+                raise ValueError("Failed to create image object")
             
-            # logger.info(f"Image created successfully: size={image.size}, mode={image.mode}")
+            # OPTIMIZATION 1: Image is already optimized (resized + RGB) by agent
+            # No need to convert again - it comes from _optimize_image()
+            # Just ensure it's RGB (lightweight check)
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
             
-            # Process image with CLIP
-            # logger.info("Processing with CLIP...")
+            logger.info(f"Image ready for CLIP: {image.size}, mode={image.mode}")
+            
+            # OPTIMIZATION 2: Process with CLIP on optimized image
             inputs = self.clip_processor(images=image, return_tensors="pt")
             
+            # OPTIMIZATION 3: Use torch.no_grad() for inference (no gradient computation)
             with torch.no_grad():
                 image_features = self.clip_model.get_image_features(**inputs)
             
             # Normalize embedding
             embedding = image_features / image_features.norm(dim=-1, keepdim=True)
-            
-            logger.info(f"Embedding generated successfully, shape: {embedding.shape}")
             return embedding[0].cpu().numpy().tolist()
 
         except Exception as e:
-            logger.error(f"Error in generate_image_embedding: {str(e)}", exc_info=True)
-            raise         
+            logger.error(f"Embedding generation error: {str(e)}", exc_info=True)
+            raise       
         
     def generate_text_embedding(self, text: str) -> List[float]:
         
