@@ -29,5 +29,5 @@ def generate_test_dataset(test_size: int = 25, output_file: str = "test_dataset.
     with open(output_file, "w") as f:
         json.dump(formatted_test_dataset, f, indent=2)
 
-    print(f"✅ Test dataset saved to {output_file}")
+    print(f"Test dataset saved to {output_file}")
     return formatted_test_dataset

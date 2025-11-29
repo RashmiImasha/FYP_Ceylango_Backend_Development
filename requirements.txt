@@ -27,3 +27,4 @@ sentence-transformers
  
 pandas 
 matplotlib
+seaborn
