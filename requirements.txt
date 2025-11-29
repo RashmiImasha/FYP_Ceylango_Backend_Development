@@ -12,8 +12,8 @@ imagehash
 # AI and Image Processing
 pinecone
 transformers==4.42.0
-torchvision== 0.19.1+cpu
-torch==2.4.1+cpu
+torchvision== 0.19.1
+torch==2.4.1
 google-generativeai 
 
 langchain==0.1.20 
