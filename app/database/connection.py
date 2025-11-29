@@ -18,7 +18,9 @@ category_collection = db.collection('category')
 destination_collection = db.collection('destination')
 emergancy_collection = db.collection("emergancyContact")
 misplace_collection = db.collection('missingPlace')
-
-event_collection = db.collection("events")
+profiles_collection = db.collection("service_provider_profiles")
+reviews_collection = db.collection("reviews")
 chat_collection = db.collection("chat")
-
+feedback_collection = db.collection("feedbacks")
+chatbot_history_collection = db.collection("chatbot_history")
+tripPlan_collection = db.collection("trip_plans")

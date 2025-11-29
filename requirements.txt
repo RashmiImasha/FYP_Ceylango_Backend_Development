@@ -1,50 +1,30 @@
-Cython
-setuptools
-wheel
-PyYAML>=6.0.1
+pydantic
+pydantic-settings
+pydantic[email]
+python-multipart
 
 # Web Framework
-fastapi==0.115.12
-uvicorn>=0.29.0
-
-# Database
-firebase-admin==7.1.0
-
-# Data Validation
-pydantic==2.11.3
-
-# Environment Variables
-python-dotenv==1.0.1
-pydantic-settings
-
-
-# Development tools (optional)
-httpx==0.28.1
-pytest==8.2.2
-python-multipart==0.0.20
-pillow
+fastapi
+uvicorn
+firebase-admin
 imagehash
 
 # AI and Image Processing
-langchain-google-genai
-langchain-core
-pydantic[email]
+pinecone
+transformers==4.42.0
+torchvision== 0.19.1+cpu
+torch==2.4.1+cpu
+google-generativeai 
 
-# ***********************************
-# # Existing dependencies (assumed)
-# fastapi
-# firebase-admin
-# python-multipart
-# pydantic
-# langchain
-# langchain-google-genai
+langchain==0.1.20 
+langchain-google-genai==1.0.1 
+langchain-community==0.0.38
 
-# # New dependencies for RAG + Agent system
-# pinecone-client==3.0.0
-# langchain-pinecone==0.1.0
-# transformers==4.36.0
-# torch==2.1.0
-# torchvision==0.16.0
-# Pillow==10.1.0
-# imagehash==4.3.1
-# langchain-community==0.0.20
+geopy 
+gtts
+deep_translator
+sentence-transformers
+ 
+pandas 
+matplotlib
+seaborn

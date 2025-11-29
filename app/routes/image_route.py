@@ -1,257 +1,414 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from firebase_admin import storage
-from app.database.connection import destination_collection, misplace_collection
-from app.utils.google_analyzer import analyze_image_withAI, ImageAnalysis
-from app.utils.destinationUtils import haversine, compute_phash, add_destination_record, update_destination_record
-from app.utils.storage_handle import delete_file_from_storage, move_files_to_new_folder
-import base64, uuid, io, imagehash
-from app.utils.crud_utils import get_all, get_by_id, delete_by_id
+from app.database.connection import misplace_collection, feedback_collection
+from app.services.agent_service import get_agent_service
+from app.services.pineconeService import get_pinecone_service
+from app.models.image import SnapImageResponse
+from app.utils.crud_utils import CrudUtils
 from app.models.destination import MissingPlaceOut
+from app.models.review import FeedbackRequest
+from deep_translator import GoogleTranslator 
+from gtts import gTTS
+from PIL import Image
+import uuid, io, logging, time, base64
 from typing import Optional, List
+from datetime import datetime, timedelta
+from google.cloud import firestore
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
-@router.post("/uploadImage", response_model=ImageAnalysis)
-async def analyze_image(file: UploadFile = File(...)):
-    try:
-        # Read the image file
-        image_data = await file.read()
-        encoded_image = base64.b64encode(image_data).decode('utf-8')
+agent_service = get_agent_service()
+pinecone_service = get_pinecone_service()
+translator = GoogleTranslator()
 
-        # Call the AI analysis function
-        prompt = (
-             "You are a Sri Lankan heritage expert. Given the image, provide:\n"
-                "1. The exact place name.\n"
-                "2. Its district.\n"
-                "3. A brief but informative historical and cultural description.\n"
-                "Note: Avoid guessing. Respond only with confirmed facts visible in the image."                        
-        )
+# ****************************************************
+#  Content Generation routes
+# ****************************************************
 
-        result = analyze_image_withAI(encoded_image, prompt,"uploadImage")
-        return result
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An error occurred while processing the image: {str(e)}")
-    
-@router.post("/snapImage")
-async def snap_image_analyze(
+SUPPORTED_LANGUAGES = {
+    "english": {"code": "en", "name": "English"},
+    "sinhala": {"code": "si", "name": "Sinhala (සිංහල)"},
+    "tamil": {"code": "ta", "name": "Tamil (தமிழ்)"},
+    "hindi": {"code": "hi", "name": "Hindi (हिन्दी)"},
+    "japanese": {"code": "ja", "name": "Japanese (日本語)"},
+    "chinese": {"code": "zh-CN", "name": "Chinese (中文)"},
+    "french": {"code": "fr", "name": "French (Français)"},
+    "german": {"code": "de", "name": "German (Deutsch)"},
+    "spanish": {"code": "es", "name": "Spanish (Español)"},
+    "korean": {"code": "ko", "name": "Korean (한국어)"}
+}
+
+@router.post("/snapImage", response_model=SnapImageResponse)
+async def snap_image_with_agent(
     latitude: float = Form(...),
     longitude: float = Form(...),
-    destination_image: UploadFile = File(...),  
-):    
-    # read and encode image
-    image_bytes = await destination_image.read()
-    encoded_image = base64.b64encode(image_bytes).decode('utf-8')
-    image_phash = compute_phash(io.BytesIO(image_bytes))
+    destination_image: UploadFile = File(...),    
+):   
+    request_id = str(uuid.uuid4())[:8]
 
-    # check nearby location
-    nearby_destinations = []
-    for doc in destination_collection.stream():
-        data = doc.to_dict()
-        if data.get("latitude") is not None and data.get("longitude") is not None:
-            distance = haversine(latitude, longitude, data["latitude"], data["longitude"])
-            if distance <= 10000:  # 10 km
-                data['id'] = doc.id
-                nearby_destinations.append(data)
-    
-    # if nearby loc found, check for similar images
-    assumed_district = "Unknown"
-    if nearby_destinations:
-        for dest in nearby_destinations:
-            for existing_phash in dest.get("image_phash", []):
-                phash_distance = imagehash.hex_to_hash(existing_phash) - imagehash.hex_to_hash(image_phash)
-                if phash_distance <= 5:
-                    # Similar image found, return destination info
-                    return {
-                        "destination_name": dest.get("destination_name"),
-                        "district_name": dest.get("district_name"),
-                        "description": dest.get("description")
-                    }
-    
-        # Nearby found, but no similar image: (assume district name)
-        closest_dest = min(
-                nearby_destinations,
-                key=lambda d: haversine(latitude, longitude, d["latitude"], d["longitude"])
+    try:
+        # Read image
+        image_bytes = await destination_image.read()
+        if not image_bytes:
+            raise HTTPException(status_code=400, detail="Empty image file")
+
+        try:
+            image = Image.open(io.BytesIO(image_bytes))
+            image = image.convert('RGB')
+        except Exception as e:
+            logger.error(f"Failed to open image: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"Invalid image file: {str(e)}")
+            
+        gps_location = {'lat': latitude, 'lng': longitude}
+
+        # Call agent
+        agent_result = await agent_service.identify_and_generate_content(
+            image=image,
+            gps_location=gps_location,
         )
-        assumed_district = closest_dest.get("district_name", "Unknown")
 
-        prompt = (
-                f"You are analyzing a location based on an image and coordinates.\n"
-                f"Latitude: {latitude}, Longitude: {longitude}\n"
-                f"This location is within {assumed_district} district.\n\n"
-                "Use BOTH the image and this district context to identify the place.\n"
-                "If confident, return:\n"
-                "- destination_name\n"
-                "- district_name\n"
-                "- type (Beach, Mountains, Historical, Religious, Adventure, Wildlife)\n"
-                "- description\n\n"
-                "If you cannot match it even with the district context, return Unknown fields."
+        if not agent_result.get("success"):
+            raise HTTPException(status_code=500, detail=f"Agent failed: {agent_result.get('error')}")    
+
+        found_in_db = agent_result.get("found_in_db", False)
+        used_web_search = agent_result.get("used_web_search", False)  
+
+        if used_web_search:
+            logger.info(f"Location not in main database: {agent_result.get('destination_name')} - Checking for duplicates")
+
+            image_phash = CrudUtils.compute_phash(io.BytesIO(image_bytes))
+
+            historical_bg = agent_result.get('historical_background', '')
+            cultural_sig = agent_result.get('cultural_significance', '')
+            special = agent_result.get('what_makes_it_special', '')
+            visitor_exp = agent_result.get('visitor_experience', '')
+            facts = agent_result.get('interesting_facts', [])
+
+            description_parts = []
+            if historical_bg:
+                description_parts.append(f"Historical Background: {historical_bg}")
+            if cultural_sig:
+                description_parts.append(f"Cultural Significance: {cultural_sig}")
+            if special:
+                description_parts.append(f"What Makes It Special: {special}")
+            if visitor_exp:
+                description_parts.append(f"Visitor Experience: {visitor_exp}")
+            if facts:
+                facts_text = " | ".join(facts)
+                description_parts.append(f"Interesting Facts: {facts_text}")
+            
+            combined_description = "\n\n".join(description_parts)
+
+            # Prepare destination data
+            destination_data = {
+                "destination_name": agent_result.get('destination_name', 'Unknown'),
+                "latitude": latitude,
+                "longitude": longitude,
+                "district_name": agent_result.get('district_name', 'Unknown'),
+                "description": combined_description,
+                "destination_image": [],
+                "category_name": agent_result.get('category', 'Others'),
+                "image_phash": [image_phash]
+            }
+
+            #  Check for duplicates 
+            existing_docs = misplace_collection.stream()
+            already_exists = False
+            existing_doc_id = None
+
+            for doc in existing_docs:
+                data = doc.to_dict()
+                if (
+                    image_phash in data.get("image_phash", [])
+                    or data.get("destination_name", "").strip().lower() == destination_data["destination_name"].strip().lower()
+                ):
+                    already_exists = True
+                    existing_doc_id = doc.id
+                    logger.info(f"Duplicate found in missingplace: {data.get('destination_name', 'Unknown')} (ID: {existing_doc_id})")
+                    break
+
+            if not already_exists:
+
+                # Upload new image to missingplace storage 
+                bucket = storage.bucket()
+                image_id = str(uuid.uuid4())
+                blob = bucket.blob(f'missingplace_images/{image_id}_{destination_image.filename}')
+                blob.upload_from_string(image_bytes, content_type=destination_image.content_type)
+                blob.make_public()
+                destination_data["destination_image"].append(blob.public_url)       
+                
+                # Save to Firebase
+                _, doc_ref = misplace_collection.add(destination_data)
+                logger.info(f"Saved new location to missingplace: {destination_data['destination_name']} (ID: {doc_ref.id})")
+            else:
+                logger.info(f"Skipped saving - Duplicate already exists in missingplace (ID: {existing_doc_id})")
+            
+            return {                   
+                    "destination_name": agent_result.get("destination_name", "Unknown"),
+                    "district_name": agent_result.get("district_name", "Unknown"),
+                    "historical_background": agent_result.get("historical_background", ""),
+                    "cultural_significance": agent_result.get("cultural_significance", ""),
+                    "what_makes_it_special": agent_result.get("what_makes_it_special", ""),
+                    "visitor_experience": agent_result.get("visitor_experience", ""),
+                    "interesting_facts": agent_result.get("interesting_facts", []),            
+                    "request_id": request_id                                     
+                }  
+        
+        else:
+            logger.info(f"Location found in destination collection: {agent_result.get('destination_name')} - Not saving to missingplace")
+        
+        return {                   
+                "destination_name": agent_result.get("destination_name", "Unknown"),
+                "district_name": agent_result.get("district_name", "Unknown"),
+                "historical_background": agent_result.get("historical_background", ""),
+                "cultural_significance": agent_result.get("cultural_significance", ""),
+                "what_makes_it_special": agent_result.get("what_makes_it_special", ""),
+                "visitor_experience": agent_result.get("visitor_experience", ""),
+                "interesting_facts": agent_result.get("interesting_facts", []),            
+                "request_id": request_id                                     
+            }             
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in snap_image_with_agent: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to process image: {str(e)}"
+        )
+
+@router.get("/getLanguage")
+async def get_supported_languages():
+
+    languages = [
+        {"key": key, "code": config["code"], "name": config["name"]}
+        for key, config in SUPPORTED_LANGUAGES.items()
+    ]
+    
+    return {
+        "success": True,
+        "languages": languages,
+        "total": len(languages)
+    }
+
+@router.post("/translateAndSpeak")
+async def translate_and_speak(
+    destination_name: str = Form(...),
+    description: str = Form(...),
+    district_name: str = Form(default=""),
+    target_language: str = Form(default="english"),
+    include_intro: bool = Form(default=True),
+    slow: bool = Form(default=False),
+):
+    """
+    Translate text and generate audio in one step
+    """   
+    request_id = str(uuid.uuid4())[:8]
+
+    try:
+        
+        logger.info(f"[{request_id}] Description length: {len(description)} chars")
+
+        # Validation
+        if not description.strip():
+            logger.warning(f"[{request_id}] Empty description received")
+            raise HTTPException(status_code=400, detail="Description cannot be empty")
+        
+        if target_language not in SUPPORTED_LANGUAGES:
+            logger.warning(f"[{request_id}] Unsupported language requested: {target_language}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported language. Choose from: {', '.join(SUPPORTED_LANGUAGES.keys())}"
             )
 
-        result = analyze_image_withAI(encoded_image, prompt, "snapImage")
-        if not result:
-            raise HTTPException(status_code=500, detail="Failed to analyze image with AI.")
+        lang_config = SUPPORTED_LANGUAGES[target_language]
+        logger.info(f"[{request_id}] Target language: {lang_config['name']} ({lang_config['code']})")
 
-        # Save to missingplace collection
-        destination_data = {
-            "destination_name": result.destination_name,
-            "latitude": latitude,
-            "longitude": longitude,
-            "district_name": result.district_name if result.district_name != "Unknown" else assumed_district,
-            "description": result.description,
-            "destination_image": [],
-            "category_name": result.raw_category_name.value if result.raw_category_name else "Unknown",
-            "image_phash": [image_phash]
-        }
+        # Prepare base English text
+        if include_intro:
+            if district_name and district_name != "Unknown":
+                full_text_english = f"Information about {destination_name} in {district_name} district. {description}"
+            else:
+                full_text_english = f"Information about {destination_name}. {description}"
+        else:
+            full_text_english = description
+        
+        logger.info(f"[{request_id}] Full English text prepared (length: {len(full_text_english)} chars)")
 
-        # Upload image
-        bucket = storage.bucket()
-        image_id = str(uuid.uuid4())
-        blob = bucket.blob(f'missingplace_images/{image_id}_{destination_image.filename}')
-        blob.upload_from_string(image_bytes, content_type=destination_image.content_type)
-        blob.make_public()
-        destination_data["destination_image"].append(blob.public_url)
+        # Translation phase
+        translated_text = full_text_english
+        if target_language != "english":
+            logger.info(f"[{request_id}] Starting translation to {lang_config['name']}...")
+            translation_start = time.time()
+            
+            try:
+                translated_text = GoogleTranslator(
+                    source='en', 
+                    target=lang_config['code']
+                ).translate(full_text_english)
+                
+                translation_time = time.time() - translation_start
+                logger.info(f"[{request_id}] Translation completed in {translation_time:.2f}s Text length: {len(translated_text)} chars")
+                
+            except Exception as trans_error:
+                logger.error(f"[{request_id}] Translation failed: {str(trans_error)}")
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"Translation failed: {str(trans_error)}"
+                )
+        else:
+            logger.info(f"[{request_id}] No translation needed (target is English)")
 
-        _, doc_ref = misplace_collection.add(destination_data)
+        # TTS generation phase
+        logger.info(f"[{request_id}] Starting TTS generation...")
+        tts_start = time.time()
+        
+        try:
+            tts = gTTS(text=translated_text, lang=lang_config['code'], slow=slow)
+            audio_fp = io.BytesIO()
+            tts.write_to_fp(audio_fp)
+            audio_fp.seek(0)
+            
+            audio_size = audio_fp.getbuffer().nbytes
+            tts_time = time.time() - tts_start
+            
+            logger.info(f"[{request_id}] TTS generation completed in {tts_time:.2f}s")
+            logger.info(f"[{request_id}] Audio file size: {audio_size / 1024:.2f} KB")
+            
+        except Exception as tts_error:
+            logger.error(f"[{request_id}] TTS generation failed: {str(tts_error)}")
+            raise HTTPException(
+                status_code=500, 
+                detail=f"TTS generation failed: {str(tts_error)}"
+            )
 
-        return {
-            "destination_name": destination_data["destination_name"],
-            "district_name": destination_data["district_name"],
-            "description": destination_data["description"],
-            # "status": "Saved in missingplace collection"
-        }
-    
-    else:
-        # analyze image with AI
-        prompt = (
-            f"You are analyzing a location based on an image and coordinates.\n"
-            f"The image was taken at the following coordinates:\n"
-            f"- Latitude: {latitude}\n"
-            f"- Longitude: {longitude}\n\n"
-            "Your task is to identify the location *only if* both the image content and coordinates strongly support the same place.\n"
-            "If there is any mismatch, uncertainty, or if the location cannot be confidently determined, respond with the following:\n"
-            '- destination_name: "Unknown"\n'
-            '- district_name: "Unknown"\n'
-            '- type: "Unknown"\n'
-            '- description: "Could not determine based on available data."\n\n'
+        # Encode translated text for header (base64 to handle Unicode characters)
+        translated_text_encoded = base64.b64encode(translated_text.encode('utf-8')).decode('ascii')
+        
+        # Sanitize filename to avoid issues with special characters
+        safe_filename = "".join(c for c in destination_name if c.isalnum() or c in (' ', '-', '_')).strip()
+        safe_filename = safe_filename.replace(' ', '_') or 'destination'
+        
+        logger.info(f"[{request_id}] Generated audio stream successfully...!")
 
-            "If the image and coordinates clearly indicate a known place, respond with:\n"
-            "1. The exact name of the place (landmark or natural location).\n"
-            "2. The district or local area name.\n"
-            "3. The type of place. Choose ONLY ONE from: Beach, Mountains, Historical, Religious, Adventure, Wildlife\n"
-            "4. A informative historical and cultural description.\n\n"
-            " Be extremely accurate and give the answer *only* if the image and coordinates clearly match a known location."
+        # Return audio with metadata
+        return StreamingResponse(
+            audio_fp,
+            media_type="audio/mpeg",
+            headers={
+                "X-Translated-Text": translated_text_encoded,  
+                "X-Text-Encoding": "base64", 
+                "X-Request-ID": request_id,
+                "Content-Disposition": f'inline; filename="{safe_filename}_{target_language}.mp3"'
+            }
         )
 
-        result = analyze_image_withAI(encoded_image, prompt,"snapImage")
-        if not result:
-            raise HTTPException(status_code=500, detail="Failed to analyze image with AI.")  
-        
-        # Save to missingplace collection
-        destination_data = {
-            "destination_name": result.destination_name,
-            "latitude": latitude,
-            "longitude": longitude,
-            "district_name": result.district_name if result.district_name != "Unknown" else assumed_district,
-            "description": result.description,
-            "destination_image": [],
-            "category_name": result.raw_category_name.value if result.raw_category_name else "Unknown",
-            "image_phash": [image_phash]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[{request_id}] Unexpected error in translateAndSpeak: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/addFeedback")
+def add_feedback(data: FeedbackRequest):
+    try:
+        record = {
+            "feedback": data.feedback,
+            "created_at": firestore.SERVER_TIMESTAMP
         }
+        
+        _, doc_ref = feedback_collection.add(record)
+        record["id"] = doc_ref.id
 
-        # Upload image
-        bucket = storage.bucket()
-        image_id = str(uuid.uuid4())
-        blob = bucket.blob(f'missingplace_images/{image_id}_{destination_image.filename}')
-        blob.upload_from_string(image_bytes)
-        blob.make_public()
-        destination_data["destination_image"].append(blob.public_url)
-
-        _, doc_ref = misplace_collection.add(destination_data)
-
+        logger.info(f"Feedback submitted successfully...! ID: {record['id']}")
         return {
-        "destination_name": destination_data["destination_name"],
-        "district_name": destination_data["district_name"],
-        "description": destination_data["description"],
-        # "status": "Saved in missingplace"
+            "message": "Feedback submitted successfully...!",
+            "data": record["feedback"]
         }
 
-    # destination_name = result.destination_name
-    # district_name = result.district_name
-    # raw_category_name = result.raw_category_name
-    # description = result.description
+    except Exception as e:
+        logger.error(f"Error submitting feedback: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
-    # # category validation    
-    # category_query = collection.where('category_type', '==', 'location').stream()
-    # print("category_query",category_query  )
-    # available_categories = []
-    # category_doc_map = {}
-    # print("raw",raw_category_name)
-    # for doc in category_query:
-    #     print("doc",doc)
-    #     data = doc.to_dict()
-    #     name = data['category_name']
-    #     available_categories.append(name)
-    #     category_doc_map[name] = doc
+@router.get("/feedbackAnalytics")
+async def get_feedback_analytics(days: int = 30):
+    try:
+        # Time window
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=days)
 
-    # # check existing destination
-    # duplicate_found = False
-    # existing_destinations = destination_collection.stream()
-    # for doc in existing_destinations:
-    #     data = doc.to_dict()
-    #     existing_lat = data.get("latitude")
-    #     existing_lon = data.get("longitude")
-    #     if existing_lat and existing_lon:
-    #         distance = haversine(latitude, longitude, existing_lat, existing_lon)
-    #         if distance < 5:
-    #             duplicate_found = True
-    #             break
-    #             # raise HTTPException(status_code=400, detail="A destination already exists close to this location.")
+        # Fetch all feedback
+        docs = (
+            feedback_collection
+            .where("created_at", ">=", start_date)
+            .where("created_at", "<=", end_date)
+            .stream()
+        )
+
+        # Base counters
+        distribution = {
+            "excellent": 0,
+            "good": 0,
+            "acceptable": 0,
+            "poor": 0,
+            "incorrect": 0
+        }
+
+        timeseries = {}
+
+        for doc in docs:
+            data = doc.to_dict()
+            fb = data.get("feedback")
+            created_at = data.get("created_at")
+
+            # Update distribution
+            if fb in distribution:
+                distribution[fb] += 1
+
+            # Update timeseries
+            if created_at:
+                if hasattr(created_at, "to_datetime"):
+                    created_at = created_at.to_datetime()
+
+                date_key = created_at.strftime("%Y-%m-%d")
+
+                if date_key not in timeseries:
+                    timeseries[date_key] = {
+                        "excellent": 0,
+                        "good": 0,
+                        "acceptable": 0,
+                        "poor": 0,
+                        "incorrect": 0
+                    }
+
+                if fb in timeseries[date_key]:
+                    timeseries[date_key][fb] += 1
             
-    # # compute pHash and check existing image
-    # image_phash = compute_phash(io.BytesIO(image_bytes))
-    # for doc in existing_destinations:
-    #     existing_phash = doc.to_dict().get('image_phash')
-    #     if existing_phash:
-    #         distance = imagehash.hex_to_hash(existing_phash) - imagehash.hex_to_hash(image_phash)
-    #         if distance <= 5:
-    #             duplicate_found = True
-    #             break
-    #             # raise HTTPException(status_code=400, detail="A visually similar image already exists.")
-    
-    # if not duplicate_found:
-    #     # upload image
-    #     bucket = storage.bucket()
-    #     image_id = str(uuid.uuid4())
-    #     blob = bucket.blob(f'destination_images/{image_id}_{destination_image.filename}')
-    #     blob.upload_from_string(image_bytes, content_type=destination_image.content_type)
-    #     blob.make_public()
-    #     image_url = blob.public_url
+        total_count = sum(distribution.values())
 
-    #     # save to database
-    #     destination_data = {
-    #         "destination_name": destination_name,
-    #         "latitude": latitude,
-    #         "longitude": longitude,
-    #         "district_name": district_name,
-    #         "description": description,
-    #         "destination_image": image_url,
-    #         "category_name": raw_category_name.value,
-    #         "image_phash": image_phash,
-    #         "district_name_lower": district_name.lower(),
-    #     }
+        logger.info("Feedback analytics fetched successfully")
+        return {
+            "distribution": distribution,
+            "timeseries": timeseries,
+            "total_count": total_count
+        }
 
-    #     _, doc_ref = destination_collection.add(destination_data)
-    #     print("destination",destination_data)
-        
-    # return {
-    #     "destination_name": destination_name,
-    #     "district_name": district_name,
-    #     "description": description             
-    # }
+    except Exception as e:
+        logger.error(f"Error fetching feedback analytics: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ****************************************************
+#  missing-place management routes
+# ****************************************************
 
 @router.post("/moveToDestination")
 def move_missing_to_destination(missingplace_id: str):
+    
+    """Move from missingplace to destination collection and sync to Pinecone"""
+    
     doc_ref = misplace_collection.document(missingplace_id)
     doc = doc_ref.get()
     if not doc.exists:
@@ -260,38 +417,59 @@ def move_missing_to_destination(missingplace_id: str):
     data = doc.to_dict()
 
     try:
+        # Move images to destination folder
         if "destination_image" in data and data["destination_image"]:
-            new_image_urls = move_files_to_new_folder(
+            local_paths = CrudUtils.move_files_to_new_folder(
                 urls=data["destination_image"],
                 source_folder="missingplace_images",
                 target_folder="destination_images"
             )
-            data["destination_image"] = new_image_urls
 
-        record = add_destination_record(data, images=None)  # images=None → use existing image URLs + phash
-        # files_mapping = {"destination_image": "missingplace_images"}  # adjust field and folder name
-        # delete_file_from_storage(data, files_mapping)
+            # Upload the files to GCS (or storage) to get accessible URLs
+            new_image_urls = []
+            for local_path in local_paths:
+                uploaded_url = CrudUtils.upload_file_to_storage(local_path, "destination_images")
+                new_image_urls.append(uploaded_url)
+            
+            # Update data with uploaded URLs
+            data["destination_image"] = new_image_urls
+            
+
+        # Add to destination collection (which now syncs to Pinecone)
+        record = CrudUtils.add_destination_record(data, images=None)
+        logger.info(f"Moved missing place to destination collection : ID {record['id']}")
         
+        # Sync to Pinecone
+        pinecone_service.upsert_destination_image(record['id'], record)
+        logger.info(f"Synced record to Pinecone: ID {record['id']}")
+        
+        # Delete from missingplace
         doc_ref.delete()
-        return {"message": "Moved to destination successfully", "destination_id": record["id"]}
+        logger.info(f"Deleted from missing place collection: ID {missingplace_id}")
+        
+        return {
+            "message": "Moved to destination and synced to Pinecone",
+            "destination_id": record["id"]
+        }
     
     except Exception as e:
-        return {"message": "Failed to move to destination", "error": str(e)}
+        logger.error(f"Error moving to destination: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{missing_id}")
 def get_missing(missing_id: str):
-    return get_by_id(misplace_collection, missing_id)
+    return CrudUtils.get_by_id(misplace_collection, missing_id)
 
 @router.get("/")
 def get_all_missing():
-    return get_all(misplace_collection)
+    return CrudUtils.get_all(misplace_collection)
 
 @router.delete("/{missing_id}")
 def delete_missing(missing_id: str):
     files_mapping = {
         "destination_image": "missingplace_images",
     }
-    return delete_by_id(misplace_collection, missing_id, files_mapping)
+    return CrudUtils.delete_by_id(misplace_collection, missing_id, files_mapping)
 
 @router.put("/{missing_id}", response_model=MissingPlaceOut)
 def update_misplace(
@@ -305,8 +483,9 @@ def update_misplace(
     new_images: Optional[List[UploadFile]] = File(None),
     remove_existing: Optional[List[str]] = Form(None)
 ):
+    
     doc_ref = misplace_collection.document(misplace_id)
-    return update_destination_record(
+    return CrudUtils.update_destination_record(
         doc_ref=doc_ref,
         destination_id=misplace_id,
         collection=misplace_collection,   
@@ -319,8 +498,6 @@ def update_misplace(
         new_images=new_images,
         remove_existing=remove_existing
     )
-
-
 
 
 
