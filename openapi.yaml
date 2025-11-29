@@ -6,15 +6,15 @@ servers:
   - url: http://0.0.0.0:9090
     description: Local development server
 paths:
-  /image/uploadImage:
+  /image/snapImage:
     post:
-      summary: Analyze Image
-      operationId: analyze_image_image_uploadImage_post
+      summary: Snap Image With Agent
+      operationId: snap_image_with_agent_image_snapImage_post
       requestBody:
         content:
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/Body_analyze_image_image_uploadImage_post'
+              $ref: '#/components/schemas/Body_snap_image_with_agent_image_snapImage_post'
         required: true
       responses:
         '200':
@@ -22,23 +22,279 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ImageAnalysis'
+                $ref: '#/components/schemas/SnapImageResponse'
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /image/snapImage:
+  /image/getLanguage:
+    get:
+      summary: Get Supported Languages
+      operationId: get_supported_languages_image_getLanguage_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /image/translateAndSpeak:
     post:
-      summary: Snap Image Analyze
-      operationId: snap_image_analyze_image_snapImage_post
+      summary: Translate And Speak
+      description: Translate text and generate audio in one step
+      operationId: translate_and_speak_image_translateAndSpeak_post
       requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Body_translate_and_speak_image_translateAndSpeak_post'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /image/addFeedback:
+    post:
+      summary: Add Feedback
+      operationId: add_feedback_image_addFeedback_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /image/feedbackAnalytics:
+    get:
+      summary: Get Feedback Analytics
+      operationId: get_feedback_analytics_image_feedbackAnalytics_get
+      parameters:
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 30
+          title: Days
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /image/moveToDestination:
+    post:
+      summary: Move Missing To Destination
+      description: Move from missingplace to destination collection and sync to Pinecone
+      operationId: move_missing_to_destination_image_moveToDestination_post
+      parameters:
+      - name: missingplace_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Missingplace Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /image/{missing_id}:
+    get:
+      summary: Get Missing
+      operationId: get_missing_image__missing_id__get
+      parameters:
+      - name: missing_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Missing Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      summary: Delete Missing
+      operationId: delete_missing_image__missing_id__delete
+      parameters:
+      - name: missing_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Missing Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      summary: Update Misplace
+      operationId: update_misplace_image__missing_id__put
+      parameters:
+      - name: misplace_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Misplace Id
+      requestBody:
+        required: true
         content:
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/Body_snap_image_analyze_image_snapImage_post'
+              $ref: '#/components/schemas/Body_update_misplace_image__missing_id__put'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingPlaceOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /image/:
+    get:
+      summary: Get All Missing
+      operationId: get_all_missing_image__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /chatbot/message:
+    post:
+      summary: Chat Message
+      operationId: chat_message_chatbot_message_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
         required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /chatbot/history/{session_id}:
+    get:
+      summary: Get Chat History
+      description: Get chat history for a session
+      operationId: get_chat_history_chatbot_history__session_id__get
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      summary: Delete Chat History
+      operationId: delete_chat_history_chatbot_history__session_id__delete
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /chatbot/history/user/{user_id}:
+    get:
+      summary: Get User Chat Sessions
+      operationId: get_user_chat_sessions_chatbot_history_user__user_id__get
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: User Id
       responses:
         '200':
           description: Successful Response
@@ -235,11 +491,7 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema:
-                items:
-                  $ref: '#/components/schemas/DestinationOut'
-                type: array
-                title: Response Get All Destinations Destination  Get
+              schema: {}
     post:
       summary: Create Destination
       operationId: create_destination_destination__post
@@ -278,8 +530,7 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/DestinationOut'
+              schema: {}
         '422':
           description: Validation Error
           content:
@@ -330,10 +581,7 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema:
-                type: object
-                additionalProperties: true
-                title: Response Delete Destination Destination  Destination Id  Delete
+              schema: {}
         '422':
           description: Validation Error
           content:
@@ -404,7 +652,8 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/DestinationNearBy'
+                  type: object
+                  additionalProperties: true
                 title: Response Get Nearby Destination Near Nearby Get
         '422':
           description: Validation Error
@@ -412,6 +661,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /destination/syncPinecone:
+    post:
+      summary: Bulk Sync To Pinecone
+      description: 'One-time sync: Upload all existing Firebase destinations to Pinecone
+
+        Use this endpoint to initialize Pinecone with existing data'
+      operationId: bulk_sync_to_pinecone_destination_syncPinecone_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
   /emergancy/:
     get:
       summary: Get All Econtact
@@ -562,10 +824,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /event/:
+  /chat/conversations/create:
+    post:
+      summary: Create Conversation
+      description: 'Create a new conversation between tourist and service provider
+
+        Backend validates both users exist before creating'
+      operationId: create_conversation_chat_conversations_create_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConversationRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /chat/conversations:
     get:
-      summary: Get Upcoming Event
-      operationId: get_upcoming_event_event__get
+      summary: Get User Conversations
+      operationId: get_user_conversations_chat_conversations_get
       responses:
         '200':
           description: Successful Response
@@ -573,65 +863,797 @@ paths:
             application/json:
               schema:
                 items:
-                  $ref: '#/components/schemas/EventResponse'
+                  $ref: '#/components/schemas/ConversationListItem'
                 type: array
-                title: Response Get Upcoming Event Event  Get
+                title: Response Get User Conversations Chat Conversations Get
+      security:
+      - HTTPBearer: []
+  /chat/conversations/{conversation_id}:
+    get:
+      summary: Get Conversation Details
+      description: 'Get details of a specific conversation
+
+        Verifies user is a participant'
+      operationId: get_conversation_details_chat_conversations__conversation_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: conversation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Conversation Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /chat/user/status:
+    put:
+      summary: Update User Status
+      description: 'Update user online/offline status and FCM token
+
+        Called when user opens/closes app'
+      operationId: update_user_status_chat_user_status_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserStatusUpdate'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /chat/health:
+    get:
+      summary: Chat Health Check
+      description: Check if chat service is running
+      operationId: chat_health_check_chat_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /trip/create:
     post:
-      summary: Add Event
-      operationId: add_event_event__post
+      summary: Create Trip Plan
+      operationId: create_trip_plan_trip_create_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TripPlanRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /trip/get/{trip_id}:
+    get:
+      summary: Get Trip Plan
+      operationId: get_trip_plan_trip_get__trip_id__get
+      parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Trip Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripPlanResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /trip/all:
+    get:
+      summary: Get All Trip Plans
+      operationId: get_all_trip_plans_trip_all_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          description: Maximum number of trips to return
+          default: 10
+          title: Limit
+        description: Maximum number of trips to return
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TripPlanResponse'
+                title: Response Get All Trip Plans Trip All Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /trip/delete/{trip_id}:
+    delete:
+      summary: Delete Trip Plan
+      operationId: delete_trip_plan_trip_delete__trip_id__delete
+      parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Trip Id
+      - name: user_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: User Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /trip/rename/{trip_id}:
+    patch:
+      summary: Rename Trip Plan
+      operationId: rename_trip_plan_trip_rename__trip_id__patch
+      parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Trip Id
+      - name: user_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: User Id
+      - name: new_name
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 3
+          maxLength: 100
+          title: New Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /service_provider/apply:
+    post:
+      summary: Apply Service Provider
+      operationId: apply_service_provider_service_provider_apply_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceProviderApplication'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /service_provider/review/{application_id}:
+    post:
+      summary: Review Service Provider
+      operationId: review_service_provider_service_provider_review__application_id__post
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Application Id
+      - name: decision
+        in: query
+        required: true
+        schema:
+          enum:
+          - Approved
+          - Rejected
+          type: string
+          title: Decision
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /service_provider/:
+    get:
+      summary: Get All Service Providers
+      description: Fetch all service providers with optional filters
+      operationId: get_all_service_providers_service_provider__get
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+      - name: service_category
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Service Category
+      - name: district
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: District
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /service_provider/profile:
+    get:
+      summary: Get My Profile
+      description: Get service provider's own profile
+      operationId: get_my_profile_service_provider_profile_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+    put:
+      summary: Update Profile
+      description: Update all profile information in a single request
+      operationId: update_profile_service_provider_profile_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /service_provider/me:
+    get:
+      summary: Get Current Service Provider
+      description: Get currently authenticated service provider's profile + user info.
+      operationId: get_current_service_provider_service_provider_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /service_provider/profile/images/profile:
+    post:
+      summary: Upload Profile Images
+      description: Upload profile images (regular service images)
+      operationId: upload_profile_images_service_provider_profile_images_profile_post
       requestBody:
         content:
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/Body_add_event_event__post'
+              $ref: '#/components/schemas/Body_upload_profile_images_service_provider_profile_images_profile_post'
         required: true
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/EventResponse'
+              schema: {}
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /event/{event_id}:
-    get:
-      summary: Get Event Byid
-      operationId: get_event_byId_event__event_id__get
-      parameters:
-      - name: event_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Event Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/EventResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
     delete:
-      summary: Delete Event
-      operationId: delete_event_event__event_id__delete
+      summary: Delete Profile Images
+      description: Delete specific profile images
+      operationId: delete_profile_images_service_provider_profile_images_profile_delete
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteImagesRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /service_provider/profile/images/posters:
+    post:
+      summary: Upload Poster Image
+      description: Upload a promotional poster with metadata
+      operationId: upload_poster_image_service_provider_profile_images_posters_post
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_upload_poster_image_service_provider_profile_images_posters_post'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /service_provider/profile/images/posters/metadata:
+    put:
+      summary: Update Poster Metadata
+      description: Update poster metadata (name, description, expiration_date) without
+        changing the image
+      operationId: update_poster_metadata_service_provider_profile_images_posters_metadata_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePosterMetadataRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /service_provider/profile/images/posters/{poster_id}:
+    delete:
+      summary: Delete Poster Image
+      description: Delete a specific poster by ID
+      operationId: delete_poster_image_service_provider_profile_images_posters__poster_id__delete
+      security:
+      - HTTPBearer: []
       parameters:
-      - name: event_id
+      - name: poster_id
         in: path
         required: true
         schema:
           type: string
-          title: Event Id
+          title: Poster Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /service_provider/profile/toggle-status:
+    put:
+      summary: Toggle Profile Status
+      description: Toggle service provider profile active/inactive status
+      operationId: toggle_profile_status_service_provider_profile_toggle_status_put
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /service_provider/dashboard/stats:
+    get:
+      summary: Get Dashboard Stats
+      description: Get dashboard statistics for service provider
+      operationId: get_dashboard_stats_service_provider_dashboard_stats_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /service_provider/profile/{provider_uid}:
+    get:
+      summary: Get Service Provider Profile
+      description: Get public profile of any service provider (for customers)
+      operationId: get_service_provider_profile_service_provider_profile__provider_uid__get
+      parameters:
+      - name: provider_uid
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Provider Uid
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /service_provider/profiles/all:
+    get:
+      summary: Get All Service Providers
+      operationId: get_all_service_providers_service_provider_profiles_all_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /service_provider/profiles/search:
+    get:
+      summary: Search Service Providers
+      description: Search and filter service provider profiles (returns complete data)
+      operationId: search_service_providers_service_provider_profiles_search_get
+      parameters:
+      - name: service_category
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Service Category
+      - name: district
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: District
+      - name: active_only
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: true
+          title: Active Only
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          default: 20
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /service_provider/profiles/nearby:
+    get:
+      summary: Get Nearby Service Providers
+      description: Get service providers within a specific radius with complete data
+      operationId: get_nearby_service_providers_service_provider_profiles_nearby_get
+      parameters:
+      - name: latitude
+        in: query
+        required: true
+        schema:
+          type: number
+          description: User's current latitude
+          title: Latitude
+        description: User's current latitude
+      - name: longitude
+        in: query
+        required: true
+        schema:
+          type: number
+          description: User's current longitude
+          title: Longitude
+        description: User's current longitude
+      - name: radius_km
+        in: query
+        required: false
+        schema:
+          type: number
+          description: Search radius in kilometers
+          default: 10
+          title: Radius Km
+        description: Search radius in kilometers
+      - name: service_category
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Service Category
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          default: 20
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /service_provider/profiles/by-category/{service_category}:
+    get:
+      summary: Get Providers By Category
+      description: Get all providers in a specific category with complete profile
+        data
+      operationId: get_providers_by_category_service_provider_profiles_by_category__service_category__get
+      parameters:
+      - name: service_category
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Service Category
+      - name: district
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: District
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          default: 20
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /service_provider/profiles/by-district/{district}:
+    get:
+      summary: Get Providers By District
+      description: Get all providers in a specific district
+      operationId: get_providers_by_district_service_provider_profiles_by_district__district__get
+      parameters:
+      - name: district
+        in: path
+        required: true
+        schema:
+          type: string
+          title: District
+      - name: service_category
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Service Category
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          default: 20
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /review/reviews:
+    post:
+      summary: Create Review
+      description: Create a new review using email authentication
+      operationId: create_review_review_reviews_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /review/reviews/{review_id}:
+    get:
+      summary: Get Review
+      description: Get a single review by ID
+      operationId: get_review_review_reviews__review_id__get
+      parameters:
+      - name: review_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Review Id
       responses:
         '200':
           description: Successful Response
@@ -640,7 +1662,7 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Delete Event Event  Event Id  Delete
+                title: Response Get Review Review Reviews  Review Id  Get
         '422':
           description: Validation Error
           content:
@@ -648,47 +1670,509 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
     put:
-      summary: Update Event
-      operationId: update_event_event__event_id__put
+      summary: Update Review
+      description: Update an existing review
+      operationId: update_review_review_reviews__review_id__put
       parameters:
-      - name: event_id
+      - name: review_id
         in: path
         required: true
         schema:
           type: string
-          title: Event Id
+          title: Review Id
+      - name: user_email
+        in: query
+        required: true
+        schema:
+          type: string
+          description: User email for authentication
+          title: User Email
+        description: User email for authentication
       requestBody:
+        required: true
         content:
-          multipart/form-data:
+          application/json:
             schema:
-              $ref: '#/components/schemas/Body_update_event_event__event_id__put'
+              $ref: '#/components/schemas/ReviewUpdate'
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/EventResponse'
+              schema: {}
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /event/event/all:
-    get:
-      summary: Get All Event
-      operationId: get_all_Event_event_event_all_get
+    delete:
+      summary: Delete Review
+      description: Delete a review
+      operationId: delete_review_review_reviews__review_id__delete
+      parameters:
+      - name: review_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Review Id
+      - name: user_email
+        in: query
+        required: true
+        schema:
+          type: string
+          description: User email for authentication
+          title: User Email
+        description: User email for authentication
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
               schema:
-                items:
-                  $ref: '#/components/schemas/EventResponse'
-                type: array
-                title: Response Get All Event Event Event All Get
+                $ref: '#/components/schemas/HTTPValidationError'
+  /review/reviews/{review_id}/helpful:
+    post:
+      summary: Mark Review Helpful
+      description: Mark a review as helpful (toggle) using request body
+      operationId: mark_review_helpful_review_reviews__review_id__helpful_post
+      parameters:
+      - name: review_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Review Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HelpfulRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /review/destinations/{destination_id}/reviews:
+    get:
+      summary: Get Destination Reviews
+      description: Get all reviews for a destination with filtering, sorting, and
+        rating summary
+      operationId: get_destination_reviews_review_destinations__destination_id__reviews_get
+      parameters:
+      - name: destination_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Destination Id
+      - name: sort_by
+        in: query
+        required: false
+        schema:
+          enum:
+          - recent
+          - helpful
+          - rating_high
+          - rating_low
+          type: string
+          default: recent
+          title: Sort By
+      - name: min_rating
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+            maximum: 5
+            minimum: 1
+          - type: 'null'
+          title: Min Rating
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          default: 20
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /review/services/{service_id}/reviews:
+    get:
+      summary: Get Service Reviews
+      description: Get all reviews for a service provider with filtering and sorting
+      operationId: get_service_reviews_review_services__service_id__reviews_get
+      parameters:
+      - name: service_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Service Id
+      - name: sort_by
+        in: query
+        required: false
+        schema:
+          enum:
+          - recent
+          - helpful
+          - rating_high
+          - rating_low
+          type: string
+          default: recent
+          title: Sort By
+      - name: min_rating
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+            maximum: 5
+            minimum: 1
+          - type: 'null'
+          title: Min Rating
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          default: 20
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /review/users/{user_id}/reviews:
+    get:
+      summary: Get User Reviews
+      description: Get all reviews by a specific user
+      operationId: get_user_reviews_review_users__user_id__reviews_get
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: User Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          default: 20
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /review/destinations/popular:
+    get:
+      summary: Get Popular Destinations
+      description: 'Get popular destinations based on:
+
+        - Average rating
+
+        - Number of reviews
+
+        - Recent activity (reviews in last 90 days)'
+      operationId: get_popular_destinations_review_destinations_popular_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 50
+          default: 10
+          title: Limit
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          description: Consider reviews from last N days for popularity
+          default: 90
+          title: Days
+        description: Consider reviews from last N days for popularity
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /review/destinations/top-rated:
+    get:
+      summary: Get Top Rated Destinations
+      description: Get top-rated destinations using Bayesian average to handle varying
+        review counts
+      operationId: get_top_rated_destinations_review_destinations_top_rated_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 50
+          default: 10
+          title: Limit
+      - name: min_reviews
+        in: query
+        required: false
+        schema:
+          type: integer
+          description: Minimum number of reviews required
+          default: 5
+          title: Min Reviews
+        description: Minimum number of reviews required
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /review/destinations/trending:
+    get:
+      summary: Get Trending Destinations
+      description: 'Get trending destinations based on recent review activity
+
+        Trending = high number of recent reviews + good average rating'
+      operationId: get_trending_destinations_review_destinations_trending_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 50
+          default: 10
+          title: Limit
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          description: Look at reviews from last N days
+          default: 30
+          title: Days
+        description: Look at reviews from last N days
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /review/services/top-rated:
+    get:
+      summary: Get Top Rated Services
+      description: Get top-rated service providers
+      operationId: get_top_rated_services_review_services_top_rated_get
+      parameters:
+      - name: service_category
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Service Category
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 50
+          default: 10
+          title: Limit
+      - name: min_reviews
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 5
+          title: Min Reviews
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /review/services/popular:
+    get:
+      summary: Get Popular Services
+      description: Get popular service providers
+      operationId: get_popular_services_review_services_popular_get
+      parameters:
+      - name: service_category
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Service Category
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 50
+          default: 10
+          title: Limit
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 90
+          title: Days
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /review/destinations/{destination_id}/stats:
+    get:
+      summary: Get Destination Rating Stats
+      description: Get detailed rating statistics for a destination
+      operationId: get_destination_rating_stats_review_destinations__destination_id__stats_get
+      parameters:
+      - name: destination_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Destination Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /review/services/{service_id}/stats:
+    get:
+      summary: Get Service Rating Stats
+      description: Get detailed rating statistics for a service provider
+      operationId: get_service_rating_stats_review_services__service_id__stats_get
+      parameters:
+      - name: service_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Service Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /:
     get:
       summary: Root
@@ -701,75 +2185,63 @@ paths:
               schema: {}
 components:
   schemas:
-    Body_add_event_event__post:
+    ActivitySlot:
       properties:
-        event_name:
+        start_time:
           type: string
-          title: Event Name
-        date:
+          title: Start Time
+        end_time:
           type: string
-          format: date
-          title: Date
-        time:
+          title: End Time
+        destination_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Destination Id
+        destination_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Destination Name
+        activity_type:
           type: string
-          format: time
-          title: Time
-        venue:
-          type: string
-          title: Venue
-        event_lat:
-          type: number
-          title: Event Lat
-        event_lon:
-          type: number
-          title: Event Lon
-        description:
-          type: string
-          title: Description
-        post:
-          type: string
-          format: binary
-          title: Post
-        event_image:
-          items:
-            type: string
-            format: binary
-          type: array
-          title: Event Image
-          default: []
-        event_video:
-          items:
-            type: string
-            format: binary
-          type: array
-          title: Event Video
-          default: []
-        email:
-          type: string
-          format: email
-          title: Email
+          title: Activity Type
+        duration_mins:
+          type: integer
+          title: Duration Mins
+        travel_from_previous_mins:
+          type: integer
+          title: Travel From Previous Mins
+        tips:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tips
+        coordinates:
+          anyOf:
+          - additionalProperties:
+              type: number
+            type: object
+          - type: 'null'
+          title: Coordinates
+        category:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Category
+        rating:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Rating
       type: object
       required:
-      - event_name
-      - date
-      - time
-      - venue
-      - event_lat
-      - event_lon
-      - description
-      - post
-      - email
-      title: Body_add_event_event__post
-    Body_analyze_image_image_uploadImage_post:
-      properties:
-        file:
-          type: string
-          format: binary
-          title: File
-      type: object
-      required:
-      - file
-      title: Body_analyze_image_image_uploadImage_post
+      - start_time
+      - end_time
+      - activity_type
+      - duration_mins
+      - travel_from_previous_mins
+      title: ActivitySlot
     Body_create_category_category__post:
       properties:
         category_id:
@@ -810,8 +2282,10 @@ components:
           type: string
           title: Description
         destination_image:
-          type: string
-          format: binary
+          items:
+            type: string
+            format: binary
+          type: array
           title: Destination Image
         category_name:
           type: string
@@ -826,7 +2300,7 @@ components:
       - destination_image
       - category_name
       title: Body_create_destination_destination__post
-    Body_snap_image_analyze_image_snapImage_post:
+    Body_snap_image_with_agent_image_snapImage_post:
       properties:
         latitude:
           type: number
@@ -843,7 +2317,36 @@ components:
       - latitude
       - longitude
       - destination_image
-      title: Body_snap_image_analyze_image_snapImage_post
+      title: Body_snap_image_with_agent_image_snapImage_post
+    Body_translate_and_speak_image_translateAndSpeak_post:
+      properties:
+        destination_name:
+          type: string
+          title: Destination Name
+        description:
+          type: string
+          title: Description
+        district_name:
+          type: string
+          title: District Name
+          default: ''
+        target_language:
+          type: string
+          title: Target Language
+          default: english
+        include_intro:
+          type: boolean
+          title: Include Intro
+          default: true
+        slow:
+          type: boolean
+          title: Slow
+          default: false
+      type: object
+      required:
+      - destination_name
+      - description
+      title: Body_translate_and_speak_image_translateAndSpeak_post
     Body_update_category_category__category_id__put:
       properties:
         category_name:
@@ -880,15 +2383,24 @@ components:
         description:
           type: string
           title: Description
-        destination_image:
-          anyOf:
-          - type: string
-            format: binary
-          - type: 'null'
-          title: Destination Image
         category_name:
           type: string
           title: Category Name
+        new_images:
+          anyOf:
+          - items:
+              type: string
+              format: binary
+            type: array
+          - type: 'null'
+          title: New Images
+        remove_existing:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Remove Existing
       type: object
       required:
       - destination_name
@@ -898,81 +2410,76 @@ components:
       - description
       - category_name
       title: Body_update_destination_destination__destination_id__put
-    Body_update_event_event__event_id__put:
+    Body_update_misplace_image__missing_id__put:
       properties:
-        event_name:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Event Name
-        date:
-          anyOf:
-          - type: string
-            format: date
-          - type: 'null'
-          title: Date
-        time:
-          anyOf:
-          - type: string
-            format: time
-          - type: 'null'
-          title: Time
-        venue:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Venue
-        event_lat:
-          anyOf:
-          - type: number
-          - type: 'null'
-          title: Event Lat
-        event_lon:
-          anyOf:
-          - type: number
-          - type: 'null'
-          title: Event Lon
+        destination_name:
+          type: string
+          title: Destination Name
+        latitude:
+          type: number
+          title: Latitude
+        longitude:
+          type: number
+          title: Longitude
+        district_name:
+          type: string
+          title: District Name
         description:
-          anyOf:
-          - type: string
-          - type: 'null'
+          type: string
           title: Description
-        post:
+        category_name:
+          type: string
+          title: Category Name
+        new_images:
           anyOf:
-          - type: string
-            format: binary
+          - items:
+              type: string
+              format: binary
+            type: array
           - type: 'null'
-          title: Post
-        event_image:
-          items:
-            type: string
-            format: binary
-          type: array
-          title: Event Image
-          default: []
-        remove_images:
-          type: boolean
-          title: Remove Images
-          default: false
-        event_video:
-          items:
-            type: string
-            format: binary
-          type: array
-          title: Event Video
-          default: []
-        remove_video:
-          type: boolean
-          title: Remove Video
-          default: false
-        email:
+          title: New Images
+        remove_existing:
           anyOf:
-          - type: string
-            format: email
+          - items:
+              type: string
+            type: array
           - type: 'null'
-          title: Email
+          title: Remove Existing
       type: object
-      title: Body_update_event_event__event_id__put
+      required:
+      - destination_name
+      - latitude
+      - longitude
+      - district_name
+      - description
+      - category_name
+      title: Body_update_misplace_image__missing_id__put
+    Body_upload_poster_image_service_provider_profile_images_posters_post:
+      properties:
+        poster:
+          type: string
+          format: binary
+          title: Poster
+        metadata:
+          type: string
+          title: Metadata
+      type: object
+      required:
+      - poster
+      - metadata
+      title: Body_upload_poster_image_service_provider_profile_images_posters_post
+    Body_upload_profile_images_service_provider_profile_images_profile_post:
+      properties:
+        images:
+          items:
+            type: string
+            format: binary
+          type: array
+          title: Images
+      type: object
+      required:
+      - images
+      title: Body_upload_profile_images_service_provider_profile_images_profile_post
     CategoryOut:
       properties:
         category_name:
@@ -996,57 +2503,156 @@ components:
       - category_image
       - category_id
       title: CategoryOut
-    DestinationNearBy:
+    ChatRequest:
       properties:
-        destination_name:
+        query:
           type: string
-          title: Destination Name
-        latitude:
-          type: number
-          title: Latitude
-        longitude:
-          type: number
-          title: Longitude
-        district_name:
-          type: string
-          title: District Name
-        description:
-          type: string
-          title: Description
-        destination_image:
-          type: string
-          title: Destination Image
-        category_name:
-          type: string
-          title: Category Name
-        image_phash:
+          title: Query
+        lat:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Lat
+        lon:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Lon
+        session_id:
           anyOf:
           - type: string
           - type: 'null'
-          title: Image Phash
-        district_name_lower:
+          title: Session Id
+        user_id:
           anyOf:
           - type: string
           - type: 'null'
-          title: District Name Lower
-        id:
-          type: string
-          title: Id
-        distance:
-          type: number
-          title: Distance
+          title: User Id
       type: object
       required:
-      - destination_name
-      - latitude
-      - longitude
-      - district_name
-      - description
-      - destination_image
-      - category_name
-      - id
-      - distance
-      title: DestinationNearBy
+      - query
+      title: ChatRequest
+    ConversationListItem:
+      properties:
+        conversation_id:
+          type: string
+          title: Conversation Id
+        other_user_id:
+          type: string
+          title: Other User Id
+        other_user_name:
+          type: string
+          title: Other User Name
+        other_user_avatar:
+          type: string
+          title: Other User Avatar
+        other_user_role:
+          type: string
+          title: Other User Role
+        last_message:
+          type: string
+          title: Last Message
+        last_message_time:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Message Time
+        unread_count:
+          type: integer
+          title: Unread Count
+        is_last_message_mine:
+          type: boolean
+          title: Is Last Message Mine
+      type: object
+      required:
+      - conversation_id
+      - other_user_id
+      - other_user_name
+      - other_user_avatar
+      - other_user_role
+      - last_message
+      - last_message_time
+      - unread_count
+      - is_last_message_mine
+      title: ConversationListItem
+    ConversationResponse:
+      properties:
+        conversation_id:
+          type: string
+          title: Conversation Id
+        exists:
+          type: boolean
+          title: Exists
+        tourist_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tourist Name
+        provider_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider Name
+      type: object
+      required:
+      - conversation_id
+      - exists
+      title: ConversationResponse
+    CreateConversationRequest:
+      properties:
+        tourist_id:
+          type: string
+          title: Tourist Id
+        provider_id:
+          type: string
+          title: Provider Id
+      type: object
+      required:
+      - tourist_id
+      - provider_id
+      title: CreateConversationRequest
+    DayItinerary:
+      properties:
+        day_number:
+          type: integer
+          title: Day Number
+        date:
+          type: string
+          title: Date
+        theme:
+          type: string
+          title: Theme
+        activities:
+          items:
+            $ref: '#/components/schemas/ActivitySlot'
+          type: array
+          title: Activities
+        total_distance_km:
+          type: number
+          title: Total Distance Km
+        total_travel_time_mins:
+          type: integer
+          title: Total Travel Time Mins
+      type: object
+      required:
+      - day_number
+      - date
+      - theme
+      - activities
+      - total_distance_km
+      - total_travel_time_mins
+      title: DayItinerary
+    DeleteImagesRequest:
+      properties:
+        image_urls:
+          items:
+            type: string
+          type: array
+          title: Image Urls
+      type: object
+      required:
+      - image_urls
+      title: DeleteImagesRequest
     DestinationOut:
       properties:
         destination_name:
@@ -1065,21 +2671,52 @@ components:
           type: string
           title: Description
         destination_image:
-          type: string
+          items:
+            type: string
+          type: array
           title: Destination Image
         category_name:
           type: string
           title: Category Name
         image_phash:
-          anyOf:
-          - type: string
-          - type: 'null'
+          items:
+            type: string
+          type: array
           title: Image Phash
         district_name_lower:
           anyOf:
           - type: string
           - type: 'null'
           title: District Name Lower
+        average_rating:
+          type: number
+          title: Average Rating
+          default: 0.0
+        total_reviews:
+          type: integer
+          title: Total Reviews
+          default: 0
+        rating_breakdown:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Rating Breakdown
+          default:
+            '1': 0
+            '2': 0
+            '3': 0
+            '4': 0
+            '5': 0
+        created_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Created At
+        updated_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Updated At
         id:
           type: string
           title: Id
@@ -1174,68 +2811,24 @@ components:
       - police_contact
       - distance_km
       title: EmergancyNearest
-    EventResponse:
+    FeedbackRequest:
       properties:
-        event_name:
+        feedback:
           type: string
-          title: Event Name
-        date:
-          type: string
-          format: date
-          title: Date
-        time:
-          type: string
-          format: time
-          title: Time
-        venue:
-          type: string
-          title: Venue
-        event_lat:
-          type: number
-          title: Event Lat
-        event_lon:
-          type: number
-          title: Event Lon
-        description:
-          type: string
-          title: Description
-        post:
-          type: string
-          title: Post
-        event_image:
-          anyOf:
-          - items:
-              type: string
-            type: array
-          - type: 'null'
-          title: Event Image
-        event_video:
-          anyOf:
-          - items:
-              type: string
-            type: array
-          - type: 'null'
-          title: Event Video
-        email:
-          type: string
-          format: email
-          title: Email
-        id:
-          type: string
-          title: Id
+          pattern: ^(excellent|good|acceptable|poor|incorrect)$
+          title: Feedback
       type: object
       required:
-      - event_name
-      - date
-      - time
-      - venue
-      - event_lat
-      - event_lon
-      - description
-      - post
-      - email
-      - id
-      title: EventResponse
+      - feedback
+      title: FeedbackRequest
+    GroupType:
+      type: string
+      enum:
+      - solo
+      - couple
+      - family
+      - friends
+      title: GroupType
     HTTPValidationError:
       properties:
         detail:
@@ -1245,27 +2838,426 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
-    ImageAnalysis:
+    HelpfulRequest:
       properties:
-        location:
+        user_email:
           type: string
-          title: Location
-          description: The location identified in the image
-        district:
+          format: email
+          title: User Email
+      type: object
+      required:
+      - user_email
+      title: HelpfulRequest
+    InterestType:
+      type: string
+      enum:
+      - adventure sports
+      - cultural sites
+      - nature and wildlife
+      - museums and art
+      - beaches and relaxation
+      - nightlife
+      - photography
+      - local experience
+      - historical places
+      title: InterestType
+    MissingPlaceOut:
+      properties:
+        destination_name:
           type: string
-          title: District
-          description: The district of the location
+          title: Destination Name
+        latitude:
+          type: number
+          title: Latitude
+        longitude:
+          type: number
+          title: Longitude
+        district_name:
+          type: string
+          title: District Name
         description:
           type: string
           title: Description
-          description: Historical and cultural value description
+        destination_image:
+          items:
+            type: string
+          type: array
+          title: Destination Image
+        category_name:
+          type: string
+          title: Category Name
+        image_phash:
+          items:
+            type: string
+          type: array
+          title: Image Phash
+        district_name_lower:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: District Name Lower
+        average_rating:
+          type: number
+          title: Average Rating
+          default: 0.0
+        total_reviews:
+          type: integer
+          title: Total Reviews
+          default: 0
+        rating_breakdown:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Rating Breakdown
+          default:
+            '1': 0
+            '2': 0
+            '3': 0
+            '4': 0
+            '5': 0
+        created_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Created At
+        updated_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Updated At
+        id:
+          type: string
+          title: Id
       type: object
       required:
-      - location
-      - district
+      - destination_name
+      - latitude
+      - longitude
+      - district_name
       - description
-      title: ImageAnalysis
-      description: Schema for analyzing an image.
+      - destination_image
+      - category_name
+      - id
+      title: MissingPlaceOut
+    ReviewCreate:
+      properties:
+        user_email:
+          type: string
+          format: email
+          title: User Email
+          description: User email for authentication
+        reviewable_type:
+          type: string
+          enum:
+          - destination
+          - service
+          title: Reviewable Type
+        reviewable_id:
+          type: string
+          title: Reviewable Id
+        rating:
+          type: integer
+          maximum: 5.0
+          minimum: 1.0
+          title: Rating
+          description: Rating from 1 to 5
+        title:
+          type: string
+          maxLength: 255
+          minLength: 3
+          title: Title
+        comment:
+          type: string
+          minLength: 10
+          title: Comment
+        visit_date:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Visit Date
+      type: object
+      required:
+      - user_email
+      - reviewable_type
+      - reviewable_id
+      - rating
+      - title
+      - comment
+      title: ReviewCreate
+    ReviewUpdate:
+      properties:
+        rating:
+          anyOf:
+          - type: integer
+            maximum: 5.0
+            minimum: 1.0
+          - type: 'null'
+          title: Rating
+        title:
+          anyOf:
+          - type: string
+            maxLength: 255
+            minLength: 3
+          - type: 'null'
+          title: Title
+        comment:
+          anyOf:
+          - type: string
+            minLength: 10
+          - type: 'null'
+          title: Comment
+        visit_date:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Visit Date
+      type: object
+      title: ReviewUpdate
+    ServiceProviderApplication:
+      properties:
+        email:
+          type: string
+          format: email
+          title: Email
+        full_name:
+          type: string
+          title: Full Name
+        service_name:
+          type: string
+          title: Service Name
+        district:
+          type: string
+          title: District
+        service_category:
+          type: string
+          title: Service Category
+        phone_number:
+          type: string
+          title: Phone Number
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+      type: object
+      required:
+      - email
+      - full_name
+      - service_name
+      - district
+      - service_category
+      - phone_number
+      title: ServiceProviderApplication
+    SnapImageResponse:
+      properties:
+        destination_name:
+          type: string
+          title: Destination Name
+        district_name:
+          type: string
+          title: District Name
+        historical_background:
+          type: string
+          title: Historical Background
+        cultural_significance:
+          type: string
+          title: Cultural Significance
+        what_makes_it_special:
+          type: string
+          title: What Makes It Special
+        visitor_experience:
+          type: string
+          title: Visitor Experience
+        interesting_facts:
+          items:
+            type: string
+          type: array
+          title: Interesting Facts
+        request_id:
+          type: string
+          title: Request Id
+      type: object
+      required:
+      - destination_name
+      - district_name
+      - historical_background
+      - cultural_significance
+      - what_makes_it_special
+      - visitor_experience
+      - interesting_facts
+      - request_id
+      title: SnapImageResponse
+    TransportMode:
+      type: string
+      enum:
+      - bike
+      - car
+      - van
+      - bus
+      - train
+      title: TransportMode
+    TripPlanRequest:
+      properties:
+        user_id:
+          type: string
+          title: User Id
+        districts:
+          items:
+            type: string
+          type: array
+          title: Districts
+        start_date:
+          type: string
+          title: Start Date
+        end_date:
+          type: string
+          title: End Date
+        group_type:
+          $ref: '#/components/schemas/GroupType'
+        interests:
+          items:
+            $ref: '#/components/schemas/InterestType'
+          type: array
+          title: Interests
+        transport_mode:
+          $ref: '#/components/schemas/TransportMode'
+      type: object
+      required:
+      - user_id
+      - districts
+      - start_date
+      - end_date
+      - group_type
+      - interests
+      - transport_mode
+      title: TripPlanRequest
+    TripPlanResponse:
+      properties:
+        trip_id:
+          type: string
+          title: Trip Id
+        trip_name:
+          type: string
+          title: Trip Name
+        summary:
+          additionalProperties: true
+          type: object
+          title: Summary
+        itinerary:
+          items:
+            $ref: '#/components/schemas/DayItinerary'
+          type: array
+          title: Itinerary
+        map_data:
+          additionalProperties: true
+          type: object
+          title: Map Data
+        alternatives:
+          anyOf:
+          - items:
+              additionalProperties: true
+              type: object
+            type: array
+          - type: 'null'
+          title: Alternatives
+        generated_at:
+          type: string
+          title: Generated At
+      type: object
+      required:
+      - trip_id
+      - trip_name
+      - summary
+      - itinerary
+      - map_data
+      - generated_at
+      title: TripPlanResponse
+    UpdatePosterMetadataRequest:
+      properties:
+        poster_id:
+          type: string
+          title: Poster Id
+        name:
+          type: string
+          title: Name
+        description:
+          type: string
+          title: Description
+        expiration_date:
+          type: string
+          title: Expiration Date
+      type: object
+      required:
+      - poster_id
+      - name
+      - description
+      - expiration_date
+      title: UpdatePosterMetadataRequest
+    UpdateProfileRequest:
+      properties:
+        service_name:
+          type: string
+          title: Service Name
+        description:
+          type: string
+          title: Description
+        address:
+          type: string
+          title: Address
+        district:
+          type: string
+          title: District
+        phone_number:
+          type: string
+          title: Phone Number
+        email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Email
+        website:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Website
+        latitude:
+          type: number
+          title: Latitude
+        longitude:
+          type: number
+          title: Longitude
+        operating_hours:
+          additionalProperties:
+            additionalProperties:
+              type: string
+            type: object
+          type: object
+          title: Operating Hours
+        social_media:
+          additionalProperties:
+            type: string
+          type: object
+          title: Social Media
+        amenities:
+          items:
+            type: string
+          type: array
+          title: Amenities
+      type: object
+      required:
+      - service_name
+      - description
+      - address
+      - district
+      - phone_number
+      - latitude
+      - longitude
+      - operating_hours
+      - social_media
+      - amenities
+      title: UpdateProfileRequest
+      description: Model for updating profile - service_category is not required for
+        updates
     UserCreate:
       properties:
         email:
@@ -1292,6 +3284,20 @@ components:
       - full_name
       - password
       title: UserCreate
+    UserStatusUpdate:
+      properties:
+        online:
+          type: boolean
+          title: Online
+        fcm_token:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Fcm Token
+      type: object
+      required:
+      - online
+      title: UserStatusUpdate
     ValidationError:
       properties:
         loc:
@@ -1317,3 +3323,4 @@ components:
     HTTPBearer:
       type: http
       scheme: bearer
+
