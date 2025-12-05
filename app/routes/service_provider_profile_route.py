@@ -8,6 +8,14 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime
 from pydantic import BaseModel
 from app.database.connection import profiles_collection, user_collection
+from typing import Optional, List, Dict, Any
+from math import radians, cos, sin, asin, sqrt
+import logging
+from google.cloud.firestore import GeoPoint 
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
 
 router = APIRouter()
 security = HTTPBearer()
@@ -668,6 +676,43 @@ async def search_service_providers(
         logger.error(f"Error searching service provider profiles: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     
+
+def haversine(lon1, lat1, lon2, lat2):
+    """
+    Calculate the great circle distance between two points 
+    on the earth (specified in decimal degrees)
+    """
+    # convert decimal degrees to radians 
+    lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+
+    # haversine formula 
+    dlon = lon2 - lon1 
+    dlat = lat2 - lat1 
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * asin(sqrt(a)) 
+    r = 6371 # Radius of earth in kilometers
+    return c * r
+
+def get_lat_lng(coord_data):
+    """
+    Safely extract lat/lng from either a Dictionary OR a Firestore GeoPoint
+    """
+    try:
+        # Case 1: It's a Firestore GeoPoint object
+        if hasattr(coord_data, 'latitude') and hasattr(coord_data, 'longitude'):
+            return coord_data.latitude, coord_data.longitude
+        
+        # Case 2: It's a standard Dictionary {'lat': 10, 'lng': 20}
+        if isinstance(coord_data, dict):
+            return (
+                coord_data.get('lat') or coord_data.get('latitude'),
+                coord_data.get('lng') or coord_data.get('longitude')
+            )
+        
+        return None, None
+    except Exception:
+        return None, None
+
 @router.get("/profiles/nearby")
 async def get_nearby_service_providers(
     latitude: float = Query(..., description="User's current latitude"),
@@ -678,32 +723,46 @@ async def get_nearby_service_providers(
 ):
     """Get service providers within a specific radius with complete data"""
     try:
+        # 1. Build Base Query
         query = profiles_collection.where("is_active", "==", True)
         
         if service_category:
             query = query.where("service_category", "==", service_category)
         
+        # 2. Fetch Data (Stream)
+        # Note: In production with thousands of users, you should use Geohashing.
+        # For now, we fetch active users and filter in Python.
         docs = query.stream()
         
         nearby_providers = []
         
         for doc in docs:
-            profile_data = doc.to_dict()
-            coordinates = profile_data.get("coordinates")
-            
-            if coordinates and "lat" in coordinates and "lng" in coordinates:
-                dest_lat = coordinates["lat"]
-                dest_lng = coordinates["lng"]
+            try:
+                profile_data = doc.to_dict()
+                coordinates = profile_data.get("coordinates")
                 
-                # Calculate distance
-                distance = CrudUtils.haversine(latitude, longitude, dest_lat, dest_lng)
+                if not coordinates:
+                    continue
+
+                # 3. FIX: Safe Coordinate Extraction
+                dest_lat, dest_lng = get_lat_lng(coordinates)
+                
+                # Skip if invalid coordinates
+                if dest_lat is None or dest_lng is None:
+                    continue
+
+                # 4. Calculate Distance
+                distance = haversine(longitude, latitude, dest_lng, dest_lat)
                 
                 if distance <= radius_km:
-                    # Get user info
+                    # Optional: Fetch user info only if within range (Save Reads)
+                    # Optimization: If profile_data already has name, skip this read
+                    user_data = {}
                     user_doc = user_collection.document(doc.id).get()
-                    user_data = user_doc.to_dict() if user_doc.exists else {}
-                    
-                    # Complete profile with distance
+                    if user_doc.exists:
+                        user_data = user_doc.to_dict()
+
+                    # 5. Build Response Object
                     provider_complete = {
                         "uid": doc.id,
                         "service_name": profile_data.get("service_name", ""),
@@ -711,18 +770,14 @@ async def get_nearby_service_providers(
                         "description": profile_data.get("description", ""),
                         "address": profile_data.get("address", ""),
                         "district": profile_data.get("district", ""),
-                        "coordinates": coordinates,
+                        # Return simple dict for frontend compatibility
+                        "coordinates": {"latitude": dest_lat, "longitude": dest_lng},
                         "phone_number": profile_data.get("phone_number", ""),
                         "email": profile_data.get("email"),
                         "website": profile_data.get("website"),
-                        "social_media": profile_data.get("social_media", {}),
-                        "operating_hours": profile_data.get("operating_hours", {}),
                         "profile_images": profile_data.get("profile_images", []),
-                        "poster_images": profile_data.get("poster_images", []),
-                        "amenities": profile_data.get("amenities", []),
-                        "is_active": profile_data.get("is_active", True),
-                        "created_at": profile_data.get("created_at"),
-                        "updated_at": profile_data.get("updated_at"),
+                        "rating": profile_data.get("rating", 0.0), # Added rating support
+                        "review_count": profile_data.get("review_count", 0),
                         "provider_info": {
                             "full_name": user_data.get("full_name", ""),
                             "status": user_data.get("status", "")
@@ -731,21 +786,17 @@ async def get_nearby_service_providers(
                     }
                     
                     nearby_providers.append(provider_complete)
+
+            except Exception as inner_e:
+                # Log bad rows but don't crash the whole request
+                logger.warning(f"Skipping bad profile {doc.id}: {str(inner_e)}")
+                continue
         
-        # Sort by distance
+        # 6. Sort and Limit
         nearby_providers.sort(key=lambda x: x["distance_km"])
-        
-        # Apply limit
         nearby_providers = nearby_providers[:limit]
 
-        logger.info(f"Found {len(nearby_providers)} nearby service providers within {radius_km} km")
-        
-        if not nearby_providers:
-            return {
-                "count": 0,
-                "profiles": [],
-                "message": f"No service providers found within {radius_km} km"
-            }
+        logger.info(f"Found {len(nearby_providers)} nearby providers")
         
         return {
             "count": len(nearby_providers),
@@ -753,15 +804,15 @@ async def get_nearby_service_providers(
             "search_params": {
                 "latitude": latitude,
                 "longitude": longitude,
-                "radius_km": radius_km,
-                "service_category": service_category
+                "radius_km": radius_km
             }
         }
     
     except Exception as e:
-        logger.error(f"Error fetching nearby service providers: {str(e)}")
+        logger.error(f"Error fetching nearby providers: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-    
+
+
 @router.get("/profiles/by-category/{service_category}")
 async def get_providers_by_category(
     service_category: str,
