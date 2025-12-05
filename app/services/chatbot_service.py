@@ -1,4 +1,4 @@
-import requests, re, logging
+import requests, re, logging, time
 from app.database.connection import db
 from app.config.settings import settings
 import google.generativeai as genai
@@ -376,8 +376,11 @@ class PineconeSearcher:
     def search(self, query: str, top_k: int = 5, filters: Dict = None) -> List[Dict]:
         """Search Pinecone for relevant destinations"""
         try:
+            start_time = time.time()
             query_vector = self.embedding_model.encode(query).tolist()
+            encode_time = time.time() - start_time
             
+            search_start = time.time()
             results = self.index.query(
                 vector=query_vector,
                 top_k=top_k,
@@ -385,6 +388,9 @@ class PineconeSearcher:
                 filter=filters,
                 namespace=self.namespace  
             )
+            search_time = time.time() - search_start
+            
+            logger.info(f"Encoding: {encode_time*1000:.0f}ms, Pinecone search: {search_time*1000:.0f}ms")
             
             destinations = []
             for match in results['matches']:
@@ -413,6 +419,7 @@ class FirebaseSearcher:
         Search services with flexible location matching
         """
         try:
+            start_time = time.time()
             query = self.db.collection('service_provider_profiles')
             
             if service_type:
@@ -422,13 +429,14 @@ class FirebaseSearcher:
             
             query = query.where('is_active', '==', True)            
             results = query.limit(limit).stream()
-            
+                        
             services = []
             for doc in results:
                 data = doc.to_dict()
                 data['id'] = doc.id
                 services.append(data)
-            
+            query_time = time.time() - start_time
+            logger.info(f"Firebase query time: {query_time*1000:.0f}ms")
             logger.info(f"FirebaseSearcher: found {len(services)} services")
             return services
             
@@ -714,7 +722,9 @@ class GeminiGenerator:
             CONTEXT INFORMATION:
             {context}
             USER QUESTION: {query}
-            Please provide a helpful answer in English:"""
+            Please provide a helpful answer in English:
+            Remember: The response must be plain text only with no markdown, no bullet points, and no formatting.
+            """
 
         try:
             # Generate response in English

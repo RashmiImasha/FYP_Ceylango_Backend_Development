@@ -67,8 +67,7 @@ def root():
 if __name__ == "__main__" :
 
     if len(sys.argv) > 1 and sys.argv[1] == "run_eval":
-        # Run the evaluation script
-        from app.test.test_agent_evaluator import run_evaluation_demo  # import your script
+        from app.test.test_agent_evaluator import run_evaluation_demo  
         asyncio.run(run_evaluation_demo())
     
     else:

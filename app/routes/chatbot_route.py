@@ -3,7 +3,7 @@ from google.cloud import firestore
 from app.models.chatbot import ChatRequest, ChatMessage, ChatSession
 from app.database.connection import chatbot_history_collection
 from app.services.chatbot_service import MultilingualRAGChatbot
-import logging, uuid
+import logging, uuid, time
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -12,6 +12,7 @@ chatbot = MultilingualRAGChatbot()
 
 @router.post("/message")
 def chat_message(request: ChatRequest):
+    start_time = time.time()
     
     session_id = request.session_id or str(uuid.uuid4())    
     location = (request.lat, request.lon) if request.lat and request.lon else None
@@ -28,7 +29,10 @@ def chat_message(request: ChatRequest):
         logger.error(f"Failed to fetch history: {e}")
 
     response = chatbot.chat(request.query, location, chat_history=chat_history)
+    end_time = time.time()  # End timer
+    response_time = end_time - start_time
     
+    logger.info(f"Response time: {response_time:.2f} seconds")
     # Save chat history
     try:        
         chat_ref = chatbot_history_collection.document(session_id)
@@ -81,7 +85,8 @@ def chat_message(request: ChatRequest):
     
     return {
         "response": response,
-        "session_id": session_id  
+        "session_id": session_id,
+        "response_time": response_time 
     }
     
 
