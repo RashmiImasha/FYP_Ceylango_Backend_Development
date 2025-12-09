@@ -16,7 +16,7 @@ services:
       
       # Firebase Configuration
       - key: FIREBASE_KEY_PATH
-        sync: false  
+        value: /etc/secrets/serviceAccountKey.json 
       - key: FIREBASE_STORAGE_BUCKET
         value: jobpoint-mobile-app-28123.appspot.com
       - key: FIREBASE_API_KEY
