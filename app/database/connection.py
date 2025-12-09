@@ -1,13 +1,28 @@
-import firebase_admin
-from firebase_admin import credentials, firestore, storage   
+import firebase_admin, os, json
+from firebase_admin import credentials, firestore   
 from app.config.settings import settings
 
 # Initialize Firebase App
 if not firebase_admin._apps:
-    cred = credentials.Certificate(settings.FIREBASE_KEY_PATH)
+
+    firebase_json = os.getenv("FIREBASE_JSON")
+    if firebase_json:
+        # Running on RAILWAY 
+        cred_dict = json.loads(firebase_json)
+        cred = credentials.Certificate(cred_dict)
+
+    else:
+        # Running LOCALLY → load from file
+        cred = credentials.Certificate(settings.FIREBASE_KEY_PATH)
+
     firebase_admin.initialize_app(cred, {
-    'storageBucket': settings.FIREBASE_STORAGE_BUCKET
+        "storageBucket": settings.FIREBASE_STORAGE_BUCKET
     })
+
+    # cred = credentials.Certificate(settings.FIREBASE_KEY_PATH)
+    # firebase_admin.initialize_app(cred, {
+    # 'storageBucket': settings.FIREBASE_STORAGE_BUCKET
+    # })
 
 # Initialize Firestore DB
 db = firestore.client()
