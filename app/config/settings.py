@@ -17,7 +17,6 @@ class Settings(BaseSettings):
     TEXT_EMBEDDING_MODEL: str
     CLIP_MODEL: str
     GEMINI_MODEL: str
-    VISION_MODEL: str
     OSRM_URL: str
 
     class Config:

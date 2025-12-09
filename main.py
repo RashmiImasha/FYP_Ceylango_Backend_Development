@@ -65,13 +65,14 @@ def root():
 
 
 if __name__ == "__main__" :
+    uvicorn.run(app, host = "0.0.0.0", port = 9090, log_level = "info")
 
-    if len(sys.argv) > 1 and sys.argv[1] == "run_eval":
-        from app.test.test_agent_evaluator import run_evaluation_demo  
-        asyncio.run(run_evaluation_demo())
+    # if len(sys.argv) > 1 and sys.argv[1] == "run_eval":
+    #     from app.test.test_agent_evaluator import run_evaluation_demo  
+    #     asyncio.run(run_evaluation_demo())
     
-    else:
-        uvicorn.run(app, host = "0.0.0.0", port = 9090, log_level = "info")
+    # else:
+    #     uvicorn.run(app, host = "0.0.0.0", port = 9090, log_level = "info")
 
 
 # generate_test_dataset(test_size=25)
