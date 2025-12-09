@@ -28,9 +28,9 @@ services:
       
       # SMTP Configuration
       - key: SMTP_EMAIL
-        sync: false  
+        value: subanyakalpani46@gmail.com 
       - key: SMTP_PASS
-        sync: false   
+        value: yzei nzag osrk rdvb 
       
       # Pinecone Configuration
       - key: PINECONE_API_KEY
