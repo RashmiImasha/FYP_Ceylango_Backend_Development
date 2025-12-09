@@ -1,0 +1,58 @@
+services:
+  - type: web
+    name: srilanka-tourism-app
+    env: python
+    region: singapore  
+    plan: free  
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    
+    # Health check endpoint
+    healthCheckPath: /
+    
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      
+      # Firebase Configuration
+      - key: FIREBASE_KEY_PATH
+        sync: false  
+      - key: FIREBASE_STORAGE_BUCKET
+        value: jobpoint-mobile-app-28123.appspot.com
+      - key: FIREBASE_API_KEY
+        sync: false  
+      
+      # Google AI Configuration
+      - key: GOOGLE_API_KEY
+        sync: false  
+      
+      # SMTP Configuration
+      - key: SMTP_EMAIL
+        sync: false  
+      - key: SMTP_PASS
+        sync: false   
+      
+      # Pinecone Configuration
+      - key: PINECONE_API_KEY
+        sync: false  
+      - key: PINECONE_ENVIRONMENT
+        value: us-east-1
+      - key: PINECONE_INDEX_NAME
+        value: sri-lanka-locations
+      
+      # Model Configuration
+      - key: TEXT_EMBEDDING_MODEL
+        value: distiluse-base-multilingual-cased-v2
+      - key: CLIP_MODEL
+        value: openai/clip-vit-base-patch32
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash-lite
+      - key: OSRM_URL
+        value: http://router.project-osrm.org
+      
+      # CORS Settings (if needed)
+      - key: ALLOWED_ORIGINS
+        value: "*"  # Change this to your frontend domain in production
+      
+    # Auto-deploy settings
+    autoDeploy: true
