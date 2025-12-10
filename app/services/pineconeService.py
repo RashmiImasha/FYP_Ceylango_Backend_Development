@@ -29,14 +29,26 @@ class PineconeService:
         self.index = self.pc.Index(self.index_name)
 
         # initialize CLIP model for image embeddings
-        self.clip_model = CLIPModel.from_pretrained(settings.CLIP_MODEL)
-        self.clip_processor = CLIPProcessor.from_pretrained(settings.CLIP_MODEL)
-        self.clip_model.eval()
+        self.clip_model = None
+        self.clip_processor = None
 
-        # initialize text embedding model 
-        self.text_embedModel = SentenceTransformer(settings.TEXT_EMBEDDING_MODEL)
+        self.text_embedModel = None
         
 
+    
+    def _load_clip_model(self):
+        if self.clip_model is None:
+            logger.info("Loading CLIP model...")
+            self.clip_model = CLIPModel.from_pretrained(settings.CLIP_MODEL)
+            self.clip_processor = CLIPProcessor.from_pretrained(settings.CLIP_MODEL)
+            self.clip_model.eval()
+
+    def _load_text_model(self):
+        if self.text_embedModel is None:
+            logger.info("Loading SentenceTransformer model...")
+            self.text_embedModel = SentenceTransformer(settings.TEXT_EMBEDDING_MODEL)
+
+    
     def generate_image_embedding(self, image_source) -> List[float]:
         """
         Generate CLIP embedding from image        
@@ -45,6 +57,7 @@ class PineconeService:
         Returns:
             List of floats representing the embedding vector
         """
+        self._load_clip_model()
         
         try:
             image = None
@@ -92,7 +105,7 @@ class PineconeService:
             raise       
         
     def generate_text_embedding(self, text: str) -> List[float]:
-        
+        self._load_text_model()
         try:
             # Generate 512-dimension embedding directly
             embedding = self.text_embedModel.encode(text).tolist()            

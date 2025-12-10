@@ -8,6 +8,12 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from datetime import datetime
 from difflib import SequenceMatcher
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image as RLImage
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -15,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class TestCase:
-    #  single test case
+    """Single test case"""
     def __init__(self, image_path: str, gps: Dict[str, float], ground_truth_name: str,
                  ground_truth_district: str, difficulty: str, notes: str = ""):
         self.image_path = image_path
@@ -35,11 +41,10 @@ class AgentEvaluator:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
 
-        self.confidence_tracking = {"High": [], "Medium": [], "Low": []}
+        self.confidence_tracking = {"High": [], "Low": []}  # Removed "Medium"
         self.tool_usage_stats = {
             "visual_analysis": 0,
             "vector_search": 0,
-            "nearby_locations": 0,
             "web_search": 0
         }
     
@@ -62,19 +67,19 @@ class AgentEvaluator:
             
             image = Image.open(test_case.image_path)
 
-            # call agent
+            # Call agent
             result = await self.agent.identify_and_generate_content(image=image, gps_location=test_case.gps)
             elapsed_time = time.time() - start_time
             
-            # calculate matrices
+            # Calculate metrics
             metrics = self._calculate_metrics(result, test_case, elapsed_time)
             
-            # track confidence level
+            # Track confidence level
             confidence = result.get("confidence", "Unknown")
             if confidence in self.confidence_tracking:
                 self.confidence_tracking[confidence].append(metrics["overall_correct"])
             
-            # track tool usage
+            # Track tool usage
             if result.get("found_in_db"):
                 self.tool_usage_stats["vector_search"] += 1
             if result.get("used_web_search"):
@@ -100,7 +105,7 @@ class AgentEvaluator:
         mock_result = {
             "destination_name": test_case.ground_truth["destination_name"] if is_correct else "Wrong Location",
             "district_name": test_case.ground_truth["district_name"] if is_correct else "Wrong District",            
-            "confidence": "High" if test_case.difficulty == "easy" else "Medium",
+            "confidence": "High" if test_case.difficulty == "easy" else "Low",  # Removed Medium
             "found_in_db": test_case.difficulty != "hard",
             "used_web_search": test_case.difficulty == "hard"
         }
@@ -128,12 +133,11 @@ class AgentEvaluator:
         substring_match = gt_name in pred_name or pred_name in gt_name
 
         def normalize_name(name):
-            # Remove common patterns
             patterns_to_remove = [
-                r',\s*colombo$', r',\s*kandy$', r',\s*galle$',  # City suffixes
-                r',\s*sri lanka$',  # Country suffix
-                r'\s+temple$', r'\s+viharaya$', r'\s+kovil$',  # Religious suffixes (if duplicated)
-                r'\s+beach$', r'\s+fort$', r'\s+museum$',  # Venue type suffixes
+                r',\s*colombo$', r',\s*kandy$', r',\s*galle$',
+                r',\s*sri lanka$',
+                r'\s+temple$', r'\s+viharaya$', r'\s+kovil$',
+                r'\s+beach$', r'\s+fort$', r'\s+museum$',
             ]
             normalized = name
             for pattern in patterns_to_remove:
@@ -152,7 +156,6 @@ class AgentEvaluator:
         pred_tokens = tokenize(pred_name)
         gt_tokens = tokenize(gt_name)
         
-        # Jaccard similarity for tokens
         if pred_tokens or gt_tokens:
             token_overlap = len(pred_tokens & gt_tokens) / len(pred_tokens | gt_tokens)
         else:
@@ -164,14 +167,13 @@ class AgentEvaluator:
         fuzzy_match = name_similarity >= 0.85 
 
         name_match = (
-        exact_match or           # Perfect match
-        substring_match or       # One contains the other
-        normalized_match or      # Same after removing suffixes
-        token_match or          # High token overlap
-        fuzzy_match             # High string similarity
+            exact_match or
+            substring_match or
+            normalized_match or
+            token_match or
+            fuzzy_match
         )
         
-        # Content quality metrics
         content_fields = [
             "historical_background",
             "cultural_significance", 
@@ -179,24 +181,24 @@ class AgentEvaluator:
             "visitor_experience"
         ]
         content_completeness = sum(
-        1 for field in content_fields 
-        if result.get(field, "").strip()
+            1 for field in content_fields 
+            if result.get(field, "").strip()
         ) / len(content_fields)
         facts_count = len(result.get("interesting_facts", []))
        
         return {
             "name_exact_match": exact_match,
             "name_similarity": name_similarity,
-            "name_match_accepted": name_match,  # NEW: Overall name match decision
+            "name_match_accepted": name_match,
             "district_correct": district_match,
-            "overall_correct": name_match and district_match,  # Use improved matching
+            "overall_correct": name_match and district_match,
             "confidence_level": result.get("confidence", "Unknown"),
             "found_in_db": result.get("found_in_db", False),
             "used_web_search": result.get("used_web_search", False),
             "response_time_seconds": elapsed_time,
             "content_completeness": content_completeness,
             "facts_count": facts_count,
-            "match_type": (  # NEW: Show which matching method succeeded
+            "match_type": (
                 "exact" if exact_match else
                 "substring" if substring_match else
                 "normalized" if normalized_match else
@@ -206,7 +208,6 @@ class AgentEvaluator:
             ),
             "error": False
         } 
-    
     
     async def run_full_evaluation(self, dataset_path: str = "test_dataset_new.json", delay_seconds: int = 6):
         
@@ -223,13 +224,12 @@ class AgentEvaluator:
             result = await self.evaluate_single_case(case)
             self.results.append(result)
 
-            delay_seconds = 6  
             if i < total:  
                 logger.info(f"Sleeping {delay_seconds}s to avoid API rate limits...")
                 await asyncio.sleep(delay_seconds)
 
         self.generate_summary_report()
-        self.generate_detailed_report()
+        self.generate_pdf_report()  # New PDF generation
         self.save_results()
         self.create_visualizations()
         self.export_to_csv()
@@ -274,7 +274,6 @@ class AgentEvaluator:
                 diff_acc = sum(r["metrics"]["overall_correct"] for r in diff_results) / len(diff_results)
                 print(f"  {diff.capitalize()}: {diff_acc:.1%} ({len(diff_results)} cases)")
         
-        # Confidence level accuracy
         print(f"\nAccuracy by Confidence Level:")
         for conf, results in self.confidence_tracking.items():
             if results:
@@ -283,51 +282,161 @@ class AgentEvaluator:
         
         print("="*60 + "\n")
     
-    def generate_detailed_report(self):
-        
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        report_file = self.output_dir / f"detailed_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+    def generate_pdf_report(self):
+        """Generate comprehensive PDF report"""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        pdf_file = self.output_dir / f"evaluation_report_{timestamp}.pdf"
         
         valid_results = [r for r in self.results if not r.get("metrics", {}).get("error")]
+        if not valid_results:
+            logger.warning("No valid results to generate PDF!")
+            return
         
-        with open(report_file, 'w', encoding='utf-8') as f:
-            f.write(f"# Agent Evaluation Detailed Report\n\n")
-            f.write(f"**Generated:** {timestamp}\n\n")
-            f.write(f"**Total Test Cases:** {len(valid_results)}\n\n")
-            
-            f.write("## Individual Test Results\n\n")
-            
-            for i, result in enumerate(valid_results, 1):
-                metrics = result["metrics"]
-                status = "CORRECT" if metrics["overall_correct"] else "INCORRECT"
-                
-                f.write(f"### Test Case {i}: {Path(result['test_case']).name}\n\n")
-                f.write(f"**Status:** {status}\n\n")
-                f.write(f"**Difficulty:** {result['difficulty']}\n\n")
-                
-                f.write(f"**Ground Truth:**\n")
-                f.write(f"- Name: {result['ground_truth']['destination_name']}\n")
-                f.write(f"- District: {result['ground_truth']['district_name']}\n\n")
-                
-                f.write(f"**Prediction:**\n")
-                pred = result['prediction']
-                f.write(f"- Name: {pred.get('destination_name', 'N/A')}\n")
-                f.write(f"- District: {pred.get('district_name', 'N/A')}\n")
-                f.write(f"- Confidence: {metrics['confidence_level']}\n")
-                f.write(f"- Source: {'Database' if metrics['found_in_db'] else 'Web Search'}\n")
-                f.write(f"- Response Time: {metrics['response_time_seconds']:.2f}s\n\n")
-                
-                f.write(f"**Metrics:**\n")
-                f.write(f"- Name Similarity: {metrics['name_similarity']:.2%}\n")
-                f.write(f"- Content Completeness: {metrics['content_completeness']:.1%}\n")
-                f.write(f"- Facts Generated: {metrics['facts_count']}\n\n")
-                
-                if result.get('notes'):
-                    f.write(f"**Notes:** {result['notes']}\n\n")
-                
-                f.write("---\n\n")
+        doc = SimpleDocTemplate(str(pdf_file), pagesize=A4)
+        story = []
+        styles = getSampleStyleSheet()
         
-        logger.info(f"Saved detailed report: {report_file}")
+        # Custom styles
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor=colors.HexColor('#2c3e50'),
+            spaceAfter=30,
+            alignment=TA_CENTER
+        )
+        
+        heading_style = ParagraphStyle(
+            'CustomHeading',
+            parent=styles['Heading2'],
+            fontSize=16,
+            textColor=colors.HexColor('#34495e'),
+            spaceAfter=12,
+            spaceBefore=12
+        )
+        
+        # Title
+        story.append(Paragraph("Agent Evaluation Report", title_style))
+        story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Normal']))
+        story.append(Spacer(1, 20))
+        
+        # Summary Statistics
+        total = len(valid_results)
+        overall_acc = sum(r["metrics"]["overall_correct"] for r in valid_results) / total
+        name_acc = sum(r["metrics"]["name_exact_match"] for r in valid_results) / total
+        district_acc = sum(r["metrics"]["district_correct"] for r in valid_results) / total
+        avg_response_time = sum(r["metrics"]["response_time_seconds"] for r in valid_results) / total
+        avg_content = sum(r["metrics"]["content_completeness"] for r in valid_results) / total
+        
+        story.append(Paragraph("Summary Statistics", heading_style))
+        
+        summary_data = [
+            ['Metric', 'Value'],
+            ['Total Test Cases', str(total)],
+            ['Overall Accuracy', f'{overall_acc:.1%}'],
+            ['Name Accuracy', f'{name_acc:.1%}'],
+            ['District Accuracy', f'{district_acc:.1%}'],
+            ['Avg Response Time', f'{avg_response_time:.2f}s'],
+            ['Avg Content Completeness', f'{avg_content:.1%}'],
+        ]
+        
+        summary_table = Table(summary_data, colWidths=[3*inch, 2*inch])
+        summary_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3498db')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        story.append(summary_table)
+        story.append(Spacer(1, 20))
+        
+        # Accuracy by Difficulty
+        story.append(Paragraph("Accuracy by Difficulty", heading_style))
+        diff_data = [['Difficulty', 'Accuracy', 'Count']]
+        for diff in ["easy", "medium", "hard"]:
+            diff_results = [r for r in valid_results if r["difficulty"] == diff]
+            if diff_results:
+                diff_acc = sum(r["metrics"]["overall_correct"] for r in diff_results) / len(diff_results)
+                diff_data.append([diff.capitalize(), f'{diff_acc:.1%}', str(len(diff_results))])
+        
+        diff_table = Table(diff_data, colWidths=[2*inch, 2*inch, 1.5*inch])
+        diff_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2ecc71')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.lightgreen),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        story.append(diff_table)
+        story.append(Spacer(1, 20))
+        
+        # Confidence Level Analysis
+        story.append(Paragraph("Accuracy by Confidence Level", heading_style))
+        conf_data = [['Confidence', 'Accuracy', 'Count']]
+        for conf, results in self.confidence_tracking.items():
+            if results:
+                conf_acc = sum(results) / len(results)
+                conf_data.append([conf, f'{conf_acc:.1%}', str(len(results))])
+        
+        conf_table = Table(conf_data, colWidths=[2*inch, 2*inch, 1.5*inch])
+        conf_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e74c3c')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.lightcoral),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        story.append(conf_table)
+        story.append(Spacer(1, 20))
+        
+        # Tool Usage
+        db_matches = sum(r["metrics"]["found_in_db"] for r in valid_results)
+        web_searches = sum(r["metrics"]["used_web_search"] for r in valid_results)
+        
+        story.append(Paragraph("Tool Usage Statistics", heading_style))
+        tool_data = [
+            ['Tool', 'Usage Count', 'Percentage'],
+            ['Database Match', str(db_matches), f'{db_matches/total:.1%}'],
+            ['Web Search', str(web_searches), f'{web_searches/total:.1%}'],
+        ]
+        
+        tool_table = Table(tool_data, colWidths=[2*inch, 2*inch, 1.5*inch])
+        tool_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#9b59b6')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.lavender),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        story.append(tool_table)
+        
+        # Add visualization if exists
+        chart_files = list(self.output_dir.glob("evaluation_charts_*.png"))
+        if chart_files:
+            story.append(PageBreak())
+            story.append(Paragraph("Performance Visualizations", heading_style))
+            story.append(Spacer(1, 12))
+            
+            latest_chart = max(chart_files, key=lambda p: p.stat().st_mtime)
+            img = RLImage(str(latest_chart), width=6*inch, height=4.5*inch)
+            story.append(img)
+        
+        # Build PDF
+        doc.build(story)
+        logger.info(f"✅ PDF Report generated: {pdf_file}")
    
     def save_results(self):
         """Save detailed results to JSON"""
@@ -382,10 +491,8 @@ class AgentEvaluator:
             if not valid_results:
                 return
             
-            # Set style
             sns.set_style("whitegrid")
             
-            # Prepare data
             df = pd.DataFrame([{
                 "difficulty": r["difficulty"],
                 "correct": r["metrics"]["overall_correct"],
@@ -395,7 +502,6 @@ class AgentEvaluator:
                 "content_completeness": r["metrics"]["content_completeness"]
             } for r in valid_results])
             
-            # Create figure with subplots
             fig, axes = plt.subplots(2, 2, figsize=(14, 10))
             fig.suptitle("Agent Evaluation Results", fontsize=16, fontweight='bold')
             
@@ -407,7 +513,6 @@ class AgentEvaluator:
             axes[0, 0].set_xticklabels(axes[0, 0].get_xticklabels(), rotation=0)
             axes[0, 0].set_ylim([0, 1])
             
-            # Add value labels on bars
             for container in axes[0, 0].containers:
                 axes[0, 0].bar_label(container, fmt='%.1%%', label_type='edge')
             
@@ -422,7 +527,7 @@ class AgentEvaluator:
             # 3. Confidence Level Distribution
             conf_counts = df["confidence"].value_counts()
             axes[1, 0].pie(conf_counts, labels=conf_counts.index, autopct='%1.1f%%', 
-                          colors=['#2ecc71', '#f39c12', '#e74c3c'])
+                          colors=['#2ecc71', '#e74c3c'])
             axes[1, 0].set_title("Confidence Level Distribution")
             
             # 4. Content Completeness by Source
@@ -443,13 +548,10 @@ class AgentEvaluator:
             
         except Exception as e:
             logger.error(f"Error creating visualizations: {e}", exc_info=True)
-    
-    
-# -------------------------
-# Demo runner
-# -------------------------
-async def run_evaluation_demo():
 
+
+async def run_evaluation_demo():
+    """Demo runner"""
     agent = get_agent_service()
     evaluator = AgentEvaluator(agent, output_dir="evaluation_results")
     await evaluator.run_full_evaluation("test_dataset_new.json", delay_seconds=6)

@@ -1,3 +1,5 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 pydantic
 pydantic-settings
 pydantic[email]
@@ -12,20 +14,13 @@ imagehash
 
 # AI and Image Processing
 pinecone
-transformers==4.42.0
-torchvision== 0.19.1
-torch==2.4.1
 google-generativeai 
-
-langchain==0.1.20 
-langchain-google-genai==1.0.1 
-langchain-community==0.0.38
+torch==2.6.0
+torchvision==0.21.0
+transformers==4.42.0
 
 geopy 
 gtts
 deep_translator
 sentence-transformers
  
-pandas 
-matplotlib
-seaborn
