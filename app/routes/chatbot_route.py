@@ -88,6 +88,7 @@ def chat_message(request: ChatRequest):
         "session_id": session_id,
         "response_time": response_time 
     }
+    
 
 @router.get("/history/{session_id}")
 def get_chat_history(session_id: str):
@@ -112,35 +113,70 @@ def get_chat_history(session_id: str):
         logger.error(f"Failed to fetch chat history: {e}")
         return {"error": str(e), "messages": []}
 
+
 @router.get("/history/user/{user_id}")
 def get_user_chat_sessions(user_id: str):
-    
     try:
+        # Try the indexed query first
         sessions = chatbot_history_collection\
             .where('user_id', '==', user_id)\
-            .order_by('updated_at', direction='DESCENDING')\
+            .order_by('updated_at', direction=firestore.Query.DESCENDING)\
             .limit(50)\
             .stream()
         
         sessions_list = []
         for doc in sessions:
             data = doc.to_dict()
-            # Return preview of last message
-            last_message = data.get('messages', [])[-1] if data.get('messages') else {}
+            messages = data.get('messages', [])
+            last_message = messages[-1] if messages else {}
             
             sessions_list.append({
-                'session_id': data.get('session_id'),
+                'session_id': doc.id,  # Use document ID
                 'last_message': last_message.get('content', '')[:100],
                 'updated_at': data.get('updated_at'),
-                'message_count': len(data.get('messages', []))
+                'message_count': len(messages)
             })
         
         return {"sessions": sessions_list}
         
     except Exception as e:
-        logger.error(f"Failed to fetch user sessions: {e}")
-        return {"error": str(e), "sessions": []}
-    
+        if "index" in str(e).lower():
+            logger.info("Index not ready, using fallback query")
+            # Fallback: Get without ordering first, then sort manually
+            try:
+                all_sessions = chatbot_history_collection\
+                    .where('user_id', '==', user_id)\
+                    .limit(50)\
+                    .stream()
+                
+                sessions_list = []
+                for doc in all_sessions:
+                    data = doc.to_dict()
+                    messages = data.get('messages', [])
+                    last_message = messages[-1] if messages else {}
+                    
+                    sessions_list.append({
+                        'session_id': doc.id,
+                        'last_message': last_message.get('content', '')[:100],
+                        'updated_at': data.get('updated_at'),
+                        'message_count': len(messages)
+                    })
+                
+                # Manual sorting
+                sessions_list.sort(
+                    key=lambda x: x.get('updated_at') or datetime.min, 
+                    reverse=True
+                )
+                
+                return {"sessions": sessions_list}
+                
+            except Exception as fallback_error:
+                logger.error(f"Fallback also failed: {fallback_error}")
+                return {"error": "Index is building, please try again in a few minutes", "sessions": []}
+        else:
+            logger.error(f"Failed to fetch user sessions: {e}")
+            return {"error": str(e), "sessions": []}
+        
 @router.delete("/history/{session_id}")
 def delete_chat_history(session_id: str):
 

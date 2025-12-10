@@ -1,3 +1,4 @@
+from app.routes.auth_route import get_current_user
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from firebase_admin import auth, messaging
@@ -17,26 +18,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 security = HTTPBearer()
 
-# Collections
 conversations_collection = db.collection("conversations")
 users_collection = db.collection("users")
-
-# ==================== Authentication Middleware ====================
-
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Verify Firebase ID token and return user data"""
-    try:
-        decoded_token = auth.verify_id_token(credentials.credentials)
-        return decoded_token
-    except Exception as e:
-        logger.error(f"Invalid authentication credentials: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-# ==================== Conversation Routes ====================
 
 @router.post("/conversations/create", response_model=ConversationResponse)
 async def create_conversation(
@@ -255,9 +238,6 @@ async def get_conversation_details(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching conversation: {str(e)}"
         )
-
-
-# ==================== User Status Routes ====================
 
 @router.put("/user/status")
 async def update_user_status(

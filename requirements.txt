@@ -4,6 +4,7 @@ pydantic
 pydantic-settings
 pydantic[email]
 python-multipart
+pyreadline3
 
 # Web Framework
 fastapi

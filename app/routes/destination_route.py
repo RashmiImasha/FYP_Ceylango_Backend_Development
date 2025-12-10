@@ -6,6 +6,7 @@ from app.database.connection import destination_collection
 from typing import Optional, List
 import requests, logging
 from app.services.pineconeService import get_pinecone_service
+from math import radians, cos, sin, asin, sqrt
 
 logger = logging.getLogger(__name__)
 OSRM_BASE_URL = settings.OSRM_URL
@@ -188,42 +189,79 @@ def get_osrm_distance(lat1, lon1, lat2, lon2):
         logger.error(f"OSRM error: {e}")
         return None, None
 
+
+# 1. OPTIMIZATION: Haversine Formula (Pure Math, Ultra Fast)
+def haversine(lon1, lat1, lon2, lat2):
+    """
+    Calculate the great circle distance between two points 
+    on the earth (specified in decimal degrees)
+    """
+    # convert decimal degrees to radians 
+    lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+
+    # haversine formula 
+    dlon = lon2 - lon1 
+    dlat = lat2 - lat1 
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * asin(sqrt(a)) 
+    r = 6371 # Radius of earth in kilometers. Use 3956 for miles
+    return c * r
+
 @router.get("/near/nearby", response_model=list[dict])
 def get_nearBy(
     latitude: float = Query(..., description="User's current latitude"),
     longitude: float = Query(..., description="User's current longitude"),
     radius_range: float = 10  # in km
 ):
+    # Stream data from Firebase
     destinations = destination_collection.stream()
-    result = []
+    
+    nearby_candidates = []
 
+    # 2. OPTIMIZATION: First Pass - Filter by Haversine (In-Memory)
+    # This filters 1000 destinations down to 5 in milliseconds without network calls
     for doc in destinations:
         data = doc.to_dict()
-        dest_latitude = data.get("latitude")
-        dest_longitude = data.get("longitude")
+        dest_lat = data.get("latitude")
+        dest_lon = data.get("longitude")
 
-        if dest_latitude is not None and dest_longitude is not None:
-            distance, duration = get_osrm_distance(latitude, longitude, dest_latitude, dest_longitude)
+        if dest_lat is not None and dest_lon is not None:
+            # Quick check
+            straight_dist = haversine(longitude, latitude, dest_lon, dest_lat)
+            
+            # Add a small buffer (e.g., +20%) to allow for road winding
+            if straight_dist <= (radius_range * 1.2):
+                data["id"] = doc.id
+                data["distance_straight"] = straight_dist # Store for fallback
+                nearby_candidates.append(data)
 
-            if distance is not None:
-                distance_km = distance / 1000  # convert meters to km
+    final_results = []
 
-                print(f"Destination: {data.get('destination_name')}, Distance: {distance_km:.2f} km")
+    # 3. OPTIMIZATION: Second Pass - Precise OSRM (Network Call)
+    # Only run this expensive check on the few candidates that passed the first filter
+    for item in nearby_candidates:
+        # If you want to be extremely fast, skip OSRM entirely and just use straight_dist
+        # But if you need road distance:
+        distance, duration = get_osrm_distance(latitude, longitude, item["latitude"], item["longitude"])
+        
+        if distance is not None:
+            dist_km = distance / 1000
+            if dist_km <= radius_range:
+                item["distance"] = round(dist_km, 2)
+                item["duration_minutes"] = round(duration / 60, 1)
+                final_results.append(item)
+        else:
+            # Fallback if OSRM fails/timeouts
+            if item["distance_straight"] <= radius_range:
+                item["distance"] = round(item["distance_straight"], 2)
+                final_results.append(item)
 
-                if distance_km <= radius_range:
-                    data["id"] = doc.id
-                    data["distance"] = round(distance_km, 2)
-                    data["duration_minutes"] = round(duration / 60, 1) if duration else None
-                    result.append(data)
-
-    result.sort(key=lambda x: x['distance'])  # sort by closest first
-    logger.info(f"Found {len(result)} destinations within {radius_range} km radius")
-
-    if not result:
-        logger.warning(f"No destinations found within {radius_range} km radius")
+    final_results.sort(key=lambda x: x['distance'])
+    
+    if not final_results:
         raise HTTPException(status_code=404, detail=f"No destinations found within {radius_range} km.")
 
-    return result
+    return final_results
 
 
 # add data to pinecone first time
