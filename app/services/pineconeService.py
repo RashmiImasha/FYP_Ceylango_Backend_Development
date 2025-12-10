@@ -6,6 +6,7 @@ import torch, io, requests, logging
 from PIL import Image
 from typing import List, Dict
 from app.config.settings import settings
+import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ class PineconeService:
         if self.index_name not in self.pc.list_indexes().names():
             self.pc.create_index(
                 name=self.index_name,
-                dimension=512,  # CLIP ViT-B/32 produces 512-dim embeddings
+                dimension=512,  
                 metric="cosine",
                 spec=ServerlessSpec(
                     cloud="aws",
@@ -28,12 +29,12 @@ class PineconeService:
         
         self.index = self.pc.Index(self.index_name)
 
+        genai.configure(api_key=settings.GOOGLE_API_KEY)
+        # self.embedding_model = genai.GenerativeModel("text-embedding-001")
+
         # initialize CLIP model for image embeddings
         self.clip_model = None
         self.clip_processor = None
-
-        self.text_embedModel = None
-        
 
     
     def _load_clip_model(self):
@@ -43,11 +44,27 @@ class PineconeService:
             self.clip_processor = CLIPProcessor.from_pretrained(settings.CLIP_MODEL)
             self.clip_model.eval()
 
-    def _load_text_model(self):
-        if self.text_embedModel is None:
-            logger.info("Loading SentenceTransformer model...")
-            self.text_embedModel = SentenceTransformer(settings.TEXT_EMBEDDING_MODEL)
+    # def _load_text_model(self):
+    #     if self.text_embedModel is None:
+    #         logger.info("Loading SentenceTransformer model...")
+    #         self.text_embedModel = SentenceTransformer(settings.TEXT_EMBEDDING_MODEL)
 
+    def generate_text_embedding(self, text: str) -> List[float]:
+
+        try:
+            # Generate 512-dimension embedding directly
+            # embedding = self.text_embedModel.encode(text).tolist()   
+            response = genai.embed_content(
+                content=text,
+                task_type="retrieval_document",
+                output_dimensionality=512
+            )         
+            return response['embedding']
+        
+        except Exception as e:
+            logger.error(f"Error generating text embedding: {str(e)}")
+            raise
+    
     
     def generate_image_embedding(self, image_source) -> List[float]:
         """
@@ -104,16 +121,7 @@ class PineconeService:
             logger.error(f"Embedding generation error: {str(e)}", exc_info=True)
             raise       
         
-    def generate_text_embedding(self, text: str) -> List[float]:
-        self._load_text_model()
-        try:
-            # Generate 512-dimension embedding directly
-            embedding = self.text_embedModel.encode(text).tolist()            
-            return embedding
-        
-        except Exception as e:
-            logger.error(f"Error generating text embedding: {str(e)}")
-            raise
+    
     
     def upsert_destination_image(self, destination_id: str, destination_data: Dict) -> bool:
         """
@@ -168,7 +176,7 @@ class PineconeService:
             # Combine all text fields for embedding
             text_to_embed = f"""
                 {destination_data.get('destination_name', '')}
-                {destination_data.get('description', '')}
+                {destination_data.get('description', '')[:2000]}
                 Category: {destination_data.get('category_name', '')}
                 District: {destination_data.get('district_name', '')}
                 Location: {destination_data.get('latitude', 0)}, {destination_data.get('longitude', 0)}""".strip()
@@ -220,130 +228,7 @@ class PineconeService:
         except Exception as e:
             raise
 
-    # def search_similar_by_image(
-    #     self,
-    #     image_source,
-    #     gps_location: Optional[Dict] = None,
-    #     top_k: int = 5,
-    #     radius_km: float = 10.0
-    # ) -> List[Dict]:
-    #     """
-    #     Search for similar locations using image
-        
-    #     Args:
-    #         image_source: Image (PIL, bytes, or URL)
-    #         gps_location: Optional dict with 'lat' and 'lng' keys
-    #         top_k: Number of results to return
-    #         radius_km: Search radius in kilometers
-            
-    #     Returns:
-    #         List of matching destinations with scores
-    #     """
-    #     try:
-    #         # Generate image embedding
-    #         embedding = self.generate_image_embedding(image_source)
-            
-    #         # Prepare filter for GPS if provided
-    #         filter_dict = None
-    #         if gps_location:
-    #             # Convert km to degrees (approximate: 1 degree ≈ 111 km)
-    #             lat_range = radius_km / 111.0
-    #             lng_range = radius_km / (111.0 * abs(gps_location['lat']))
-                
-    #             filter_dict = {
-    #                 "$and": [
-    #                     {"latitude": {"$gte": gps_location['lat'] - lat_range}},
-    #                     {"latitude": {"$lte": gps_location['lat'] + lat_range}},
-    #                     {"longitude": {"$gte": gps_location['lng'] - lng_range}},
-    #                     {"longitude": {"$lte": gps_location['lng'] + lng_range}}
-    #                 ]
-    #             }
-            
-    #         # Query Pinecone
-    #         results = self.index.query(
-    #             vector=embedding,
-    #             top_k=top_k,
-    #             include_metadata=True,
-    #             namespace='destinationImages',
-    #             filter=filter_dict
-    #         )
-            
-    #         # Format results
-    #         matches = []
-    #         for match in results.get('matches', []):
-    #             matches.append({
-    #                 'id': match['id'],
-    #                 'score': float(match['score']),
-    #                 'metadata': match.get('metadata', {})
-    #             })
-            
-    #         return matches
-        
-    #     except Exception as e:
-    #         logger.error(f"Error searching Pinecone: {str(e)}")
-    #         raise
     
-    # def search_similar_by_text(
-    #     self,
-    #     query: str,
-    #     gps_location: Optional[Dict] = None,
-    #     top_k: int = 5,
-    #     radius_km: float = 10.0
-    # ) -> List[Dict]:
-    #     """
-    #     Search for similar locations using text query
-        
-    #     Args:
-    #         query: Search query text
-    #         gps_location: Optional dict with 'lat' and 'lng' keys
-    #         top_k: Number of results to return
-    #         radius_km: Search radius in kilometers
-            
-    #     Returns:
-    #         List of matching destinations with scores
-    #     """
-    #     try:
-    #         # Generate text embedding
-    #         embedding = self.generate_text_embedding(query)
-            
-    #         # Prepare filter for GPS if provided
-    #         filter_dict = None
-    #         if gps_location:
-    #             lat_range = radius_km / 111.0
-    #             lng_range = radius_km / (111.0 * abs(gps_location['lat']))
-                
-    #             filter_dict = {
-    #                 "$and": [
-    #                     {"latitude": {"$gte": gps_location['lat'] - lat_range}},
-    #                     {"latitude": {"$lte": gps_location['lat'] + lat_range}},
-    #                     {"longitude": {"$gte": gps_location['lng'] - lng_range}},
-    #                     {"longitude": {"$lte": gps_location['lng'] + lng_range}}
-    #                 ]
-    #             }
-            
-    #         # Query Pinecone
-    #         results = self.index.query(
-    #             vector=embedding,
-    #             top_k=top_k,
-    #             include_metadata=True,
-    #             namespace='destinationImages',
-    #             filter=filter_dict
-    #         )
-            
-    #         # Format results
-    #         matches = []
-    #         for match in results.get('matches', []):
-    #             matches.append({
-    #                 'id': match['id'],
-    #                 'score': float(match['score']),
-    #                 'metadata': match.get('metadata', {})
-    #             })
-            
-    #         return matches
-        
-    #     except Exception as e:
-    #         logger.error(f"Error searching Pinecone: {str(e)}")
-    #         raise
 
 _pinecone_service = None
 
