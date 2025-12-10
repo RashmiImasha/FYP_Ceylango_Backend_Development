@@ -11,7 +11,7 @@ from app.models.review import FeedbackRequest
 from deep_translator import GoogleTranslator 
 from gtts import gTTS
 from PIL import Image
-import uuid, io, logging, time, base64
+import uuid, io, logging, time, base64, asyncio
 from typing import Optional, List
 from datetime import datetime, timedelta
 from google.cloud import firestore
@@ -21,24 +21,107 @@ router = APIRouter()
 
 agent_service = get_agent_service()
 pinecone_service = get_pinecone_service()
-translator = GoogleTranslator()
 
 # ****************************************************
 #  Content Generation routes
 # ****************************************************
 
 SUPPORTED_LANGUAGES = {
-    "english": {"code": "en", "name": "English"},
+    "english": {"code": "en", "name": "English"},    
+    "hindi": {"code": "hi", "name": "Hindi (हिन्दी)"},
+    "chinese": {"code": "zh-CN", "name": "Chinese (中文)"},   
+    "spanish": {"code": "es", "name": "Spanish (Español)"},
+    "arabic": {"code": "ar", "name": "Arabic (العربية)"},
     "sinhala": {"code": "si", "name": "Sinhala (සිංහල)"},
     "tamil": {"code": "ta", "name": "Tamil (தமிழ்)"},
-    "hindi": {"code": "hi", "name": "Hindi (हिन्दी)"},
-    "japanese": {"code": "ja", "name": "Japanese (日本語)"},
-    "chinese": {"code": "zh-CN", "name": "Chinese (中文)"},
-    "french": {"code": "fr", "name": "French (Français)"},
-    "german": {"code": "de", "name": "German (Deutsch)"},
-    "spanish": {"code": "es", "name": "Spanish (Español)"},
-    "korean": {"code": "ko", "name": "Korean (한국어)"}
 }
+
+async def _save_missing_location(
+    request_id: str,
+    agent_result: dict,
+    image_bytes: bytes,
+    latitude: float,
+    longitude: float,
+    destination_image: UploadFile
+):
+    image_phash = CrudUtils.compute_phash(io.BytesIO(image_bytes))
+    destination_name = agent_result.get('destination_name', 'Unknown')
+
+    # Check for existing location by name 
+    name_docs = list(
+        misplace_collection
+        .where("destination_name", "==", destination_name)
+        .limit(1)
+        .stream()
+    )
+    
+    if name_docs:
+        logger.info(f"[{request_id}] Skipped - Location already exists in missingplace collection")
+        return
+    
+    # Check for duplicate by image hash
+    phash_docs = list(
+        misplace_collection
+        .where("image_phash", "array_contains", image_phash)
+        .limit(1)
+        .stream()
+    )
+    
+    if phash_docs:
+        logger.info(f"[{request_id}] Skipped - Similar image already exists in missingplace collection")
+        return
+
+    # Build combined description
+    fields = {
+        "historical_background": "Historical Background",
+        "cultural_significance": "Cultural Significance",
+        "what_makes_it_special": "What Makes It Special",
+        "visitor_experience": "Visitor Experience"
+    }
+    
+    description_parts = [
+        f"{title}: {agent_result[key]}"
+        for key, title in fields.items()
+        if agent_result.get(key)
+    ]
+    
+    facts = agent_result.get("interesting_facts", [])
+    if facts:
+        description_parts.append("Interesting Facts: " + " | ".join(facts))
+    
+    combined_description = "\n\n".join(description_parts)
+
+    # Prepare destination data
+    destination_data = {
+        "destination_name": destination_name,
+        "latitude": latitude,
+        "longitude": longitude,
+        "district_name": agent_result.get('district_name', 'Unknown'),
+        "description": combined_description,
+        "destination_image": [],
+        "category_name": agent_result.get('category', 'Others'),
+        "image_phash": [image_phash],
+        "created_at": firestore.SERVER_TIMESTAMP
+    }
+
+    # Upload image to Firebase Storage
+    try:
+        bucket = storage.bucket()
+        image_id = str(uuid.uuid4())
+        blob = bucket.blob(f'missingplace_images/{image_id}_{destination_image.filename}')
+        blob.upload_from_string(image_bytes, content_type=destination_image.content_type)
+        blob.make_public()
+        destination_data["destination_image"].append(blob.public_url)
+    except Exception as upload_error:
+        logger.error(f"[{request_id}] Image upload failed: {str(upload_error)}")
+        # Continue without image
+    
+    # Save to Firestore
+    _, doc_ref = misplace_collection.add(destination_data)
+    logger.info(
+        f"[{request_id}] Saved new location to missingplace: "
+        f"{destination_name} (ID: {doc_ref.id})"
+    )
 
 @router.post("/snapImage", response_model=SnapImageResponse)
 async def snap_image_with_agent(
@@ -55,8 +138,7 @@ async def snap_image_with_agent(
             raise HTTPException(status_code=400, detail="Empty image file")
 
         try:
-            image = Image.open(io.BytesIO(image_bytes))
-            image = image.convert('RGB')
+            image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
         except Exception as e:
             logger.error(f"Failed to open image: {str(e)}")
             raise HTTPException(status_code=400, detail=f"Invalid image file: {str(e)}")
@@ -72,93 +154,20 @@ async def snap_image_with_agent(
         if not agent_result.get("success"):
             raise HTTPException(status_code=500, detail=f"Agent failed: {agent_result.get('error')}")    
 
-        found_in_db = agent_result.get("found_in_db", False)
-        used_web_search = agent_result.get("used_web_search", False)  
-
+        used_web_search = agent_result.get("used_web_search", False)
         if used_web_search:
-            logger.info(f"Location not in main database: {agent_result.get('destination_name')} - Checking for duplicates")
-
-            image_phash = CrudUtils.compute_phash(io.BytesIO(image_bytes))
-
-            historical_bg = agent_result.get('historical_background', '')
-            cultural_sig = agent_result.get('cultural_significance', '')
-            special = agent_result.get('what_makes_it_special', '')
-            visitor_exp = agent_result.get('visitor_experience', '')
-            facts = agent_result.get('interesting_facts', [])
-
-            description_parts = []
-            if historical_bg:
-                description_parts.append(f"Historical Background: {historical_bg}")
-            if cultural_sig:
-                description_parts.append(f"Cultural Significance: {cultural_sig}")
-            if special:
-                description_parts.append(f"What Makes It Special: {special}")
-            if visitor_exp:
-                description_parts.append(f"Visitor Experience: {visitor_exp}")
-            if facts:
-                facts_text = " | ".join(facts)
-                description_parts.append(f"Interesting Facts: {facts_text}")
-            
-            combined_description = "\n\n".join(description_parts)
-
-            # Prepare destination data
-            destination_data = {
-                "destination_name": agent_result.get('destination_name', 'Unknown'),
-                "latitude": latitude,
-                "longitude": longitude,
-                "district_name": agent_result.get('district_name', 'Unknown'),
-                "description": combined_description,
-                "destination_image": [],
-                "category_name": agent_result.get('category', 'Others'),
-                "image_phash": [image_phash]
-            }
-
-            #  Check for duplicates 
-            existing_docs = misplace_collection.stream()
-            already_exists = False
-            existing_doc_id = None
-
-            for doc in existing_docs:
-                data = doc.to_dict()
-                if (
-                    image_phash in data.get("image_phash", [])
-                    or data.get("destination_name", "").strip().lower() == destination_data["destination_name"].strip().lower()
-                ):
-                    already_exists = True
-                    existing_doc_id = doc.id
-                    logger.info(f"Duplicate found in missingplace: {data.get('destination_name', 'Unknown')} (ID: {existing_doc_id})")
-                    break
-
-            if not already_exists:
-
-                # Upload new image to missingplace storage 
-                bucket = storage.bucket()
-                image_id = str(uuid.uuid4())
-                blob = bucket.blob(f'missingplace_images/{image_id}_{destination_image.filename}')
-                blob.upload_from_string(image_bytes, content_type=destination_image.content_type)
-                blob.make_public()
-                destination_data["destination_image"].append(blob.public_url)       
-                
-                # Save to Firebase
-                _, doc_ref = misplace_collection.add(destination_data)
-                logger.info(f"Saved new location to missingplace: {destination_data['destination_name']} (ID: {doc_ref.id})")
-            else:
-                logger.info(f"Skipped saving - Duplicate already exists in missingplace (ID: {existing_doc_id})")
-            
-            return {                   
-                    "destination_name": agent_result.get("destination_name", "Unknown"),
-                    "district_name": agent_result.get("district_name", "Unknown"),
-                    "historical_background": agent_result.get("historical_background", ""),
-                    "cultural_significance": agent_result.get("cultural_significance", ""),
-                    "what_makes_it_special": agent_result.get("what_makes_it_special", ""),
-                    "visitor_experience": agent_result.get("visitor_experience", ""),
-                    "interesting_facts": agent_result.get("interesting_facts", []),            
-                    "request_id": request_id                                     
-                }  
-        
-        else:
-            logger.info(f"Location found in destination collection: {agent_result.get('destination_name')} - Not saving to missingplace")
-        
+            try:
+                await _save_missing_location(
+                    request_id=request_id,
+                    agent_result=agent_result,
+                    image_bytes=image_bytes,
+                    latitude=latitude,
+                    longitude=longitude,
+                    destination_image=destination_image
+                )
+            except Exception as e:
+                logger.error(f"[{request_id}] Failed to save missing location: {str(e)}")
+           
         return {                   
                 "destination_name": agent_result.get("destination_name", "Unknown"),
                 "district_name": agent_result.get("district_name", "Unknown"),
@@ -201,23 +210,14 @@ async def translate_and_speak(
     target_language: str = Form(default="english"),
     include_intro: bool = Form(default=True),
     slow: bool = Form(default=False),
-):
-    """
-    Translate text and generate audio in one step
-    """   
+):  
     request_id = str(uuid.uuid4())[:8]
-
     try:
-        
-        logger.info(f"[{request_id}] Description length: {len(description)} chars")
-
         # Validation
         if not description.strip():
-            logger.warning(f"[{request_id}] Empty description received")
             raise HTTPException(status_code=400, detail="Description cannot be empty")
         
         if target_language not in SUPPORTED_LANGUAGES:
-            logger.warning(f"[{request_id}] Unsupported language requested: {target_language}")
             raise HTTPException(
                 status_code=400,
                 detail=f"Unsupported language. Choose from: {', '.join(SUPPORTED_LANGUAGES.keys())}"
@@ -227,30 +227,22 @@ async def translate_and_speak(
         logger.info(f"[{request_id}] Target language: {lang_config['name']} ({lang_config['code']})")
 
         # Prepare base English text
-        if include_intro:
-            if district_name and district_name != "Unknown":
-                full_text_english = f"Information about {destination_name} in {district_name} district. {description}"
-            else:
-                full_text_english = f"Information about {destination_name}. {description}"
+        if include_intro and district_name:
+            full_text_english = f"Information about {destination_name} in {district_name} district. {description}"
         else:
             full_text_english = description
         
         logger.info(f"[{request_id}] Full English text prepared (length: {len(full_text_english)} chars)")
 
-        # Translation phase
-        translated_text = full_text_english
+        # Translation 
         if target_language != "english":
             logger.info(f"[{request_id}] Starting translation to {lang_config['name']}...")
-            translation_start = time.time()
-            
             try:
-                translated_text = GoogleTranslator(
-                    source='en', 
-                    target=lang_config['code']
-                ).translate(full_text_english)
-                
-                translation_time = time.time() - translation_start
-                logger.info(f"[{request_id}] Translation completed in {translation_time:.2f}s Text length: {len(translated_text)} chars")
+                translator = GoogleTranslator(source="en", target=lang_config["code"])
+                translated_text = await asyncio.to_thread(
+                    translator.translate,
+                    full_text_english
+                )
                 
             except Exception as trans_error:
                 logger.error(f"[{request_id}] Translation failed: {str(trans_error)}")
@@ -258,18 +250,24 @@ async def translate_and_speak(
                     status_code=500, 
                     detail=f"Translation failed: {str(trans_error)}"
                 )
+
         else:
             logger.info(f"[{request_id}] No translation needed (target is English)")
+            translated_text = full_text_english
 
         # TTS generation phase
         logger.info(f"[{request_id}] Starting TTS generation...")
         tts_start = time.time()
         
         try:
-            tts = gTTS(text=translated_text, lang=lang_config['code'], slow=slow)
-            audio_fp = io.BytesIO()
-            tts.write_to_fp(audio_fp)
-            audio_fp.seek(0)
+            def _tts_job():
+                tts = gTTS(text=translated_text, lang=lang_config['code'], slow=slow)
+                fp = io.BytesIO()
+                tts.write_to_fp(fp)
+                fp.seek(0)
+                return fp
+
+            audio_fp = await asyncio.to_thread(_tts_job)
             
             audio_size = audio_fp.getbuffer().nbytes
             tts_time = time.time() - tts_start
