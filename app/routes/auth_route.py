@@ -1,15 +1,40 @@
 from fastapi import APIRouter, HTTPException, Depends
 from firebase_admin import auth
+from app.config import settings
 from app.database.connection import user_collection
-from app.models.user import UserCreate, UserLogin, UserInDB
+from app.models.user import ChangePasswordRequest,  UpdateUserProfileRequest, UserCreate, UserLogin, UserInDB
 from firebase_admin import exceptions as firebase_exceptions
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import asyncio, logging
+from datetime import datetime
+import requests
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 security = HTTPBearer()
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        if not credentials.credentials:
+            logger.warning("No token provided in request")
+            raise HTTPException(status_code=401, detail="No token provided")
+        
+        # Run the sync function in a thread pool
+        loop = asyncio.get_event_loop()
+        decoded_token = await loop.run_in_executor(
+            None, 
+            auth.verify_id_token,
+            credentials.credentials
+        )
+        
+        logger.info(f"Token verified for UID: {decoded_token['uid']}")
+        return decoded_token
+    except Exception as e:
+        logger.error(f"Token verification failed: {str(e)}")
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+
+
 
 @router.post("/signup")
 async def signup(user: UserCreate):
@@ -46,26 +71,6 @@ async def signup(user: UserCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    try:
-        if not credentials.credentials:
-            logger.warning("No token provided in request")
-            raise HTTPException(status_code=401, detail="No token provided")
-        
-        # Run the sync function in a thread pool
-        loop = asyncio.get_event_loop()
-        decoded_token = await loop.run_in_executor(
-            None, 
-            auth.verify_id_token, 
-            credentials.credentials
-        )
-        
-        logger.info(f"Token verified for UID: {decoded_token['uid']}")
-        return decoded_token
-    except Exception as e:
-        logger.error(f"Token verification failed: {str(e)}")
-        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
-
 
 @router.get("/login")
 async def get_profile(user_data: dict = Depends(get_current_user)):
@@ -92,3 +97,103 @@ async def get_profile(user_data: dict = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"Error in /login endpoint: {str(e)}")  # Debug log
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+
+
+@router.put("/update-profile")
+async def update_profile(
+    profile_data: UpdateUserProfileRequest,
+    user_data: dict = Depends(get_current_user)
+):
+    """
+    Update user profile information (name only)
+    """
+    try:
+        uid = user_data['uid']
+        logger.info(f"Updating profile for UID: {uid}")
+        
+        # Update display name in Firebase Auth
+        auth.update_user(uid, display_name=profile_data.full_name)
+        
+        # Update Firestore document
+        user_collection.document(uid).update({
+            "full_name": profile_data.full_name,
+            "updated_at": datetime.now().isoformat()
+        })
+        
+        logger.info(f"Profile updated successfully for UID: {uid}")
+        return {
+            "message": "Profile updated successfully",
+            "full_name": profile_data.full_name
+        }
+    
+    except Exception as e:
+        logger.error(f"Error updating profile for UID {uid}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/change-password")
+async def change_password(
+    password_data: ChangePasswordRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Change user password - requires current password verification
+    """
+    try:
+        # Verify the current token
+        loop = asyncio.get_event_loop()
+        decoded_token = await loop.run_in_executor(
+            None,
+            auth.verify_id_token,
+            credentials.credentials
+        )
+        
+        uid = decoded_token['uid']
+        email = decoded_token.get('email')
+        
+        if not email:
+            raise HTTPException(status_code=400, detail="User email not found")
+        
+        logger.info(f"Password change requested for UID: {uid}")
+        
+        # Verify current password by attempting to get a new token
+        # This is done by making a request to Firebase's signInWithPassword endpoint
+        import requests
+        import json
+        
+        # Firebase API key - you should have this in your config
+        firebase_api_key = settings.FIREBASE_API_KEY  # Add this to your settings
+        
+        # Verify current password
+        verify_url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={firebase_api_key}"
+        verify_payload = {
+            "email": email,
+            "password": password_data.current_password,
+            "returnSecureToken": True
+        }
+        
+        verify_response = requests.post(verify_url, json=verify_payload)
+        
+        if verify_response.status_code != 200:
+            logger.warning(f"Current password verification failed for UID: {uid}")
+            raise HTTPException(status_code=401, detail="Current password is incorrect")
+        
+        # Validate new password length
+        if len(password_data.new_password) < 6:
+            raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
+        
+        # Update password in Firebase Auth
+        auth.update_user(uid, password=password_data.new_password)
+        
+        logger.info(f"Password changed successfully for UID: {uid}")
+        return {
+            "message": "Password changed successfully"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error changing password: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to change password")
