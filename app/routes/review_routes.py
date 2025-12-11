@@ -1,8 +1,8 @@
-from fastapi import APIRouter, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from firebase_admin import auth
 from app.database.connection import destination_collection, reviews_collection, profiles_collection, user_collection
 from app.models.review import HelpfulRequest, ReviewCreate, ReviewUpdate
-from fastapi.security import HTTPBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from datetime import datetime
 from typing import Optional, List, Literal
 import uuid, logging
@@ -11,12 +11,49 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 security = HTTPBearer()
 
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Verify JWT token and return current user"""
+    try:
+        token = credentials.credentials
+        decoded_token = auth.verify_id_token(token)
+        uid = decoded_token["uid"]
+        
+        user_doc = user_collection.document(uid).get()
+        if not user_doc.exists:
+            logger.warning(f"User with UID {uid} not found in Firestore")
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user_data = user_doc.to_dict()
+        
+        logger.info(f"Authenticated user: UID {uid}, Role: {user_data.get('role')}")
+        return uid, user_data
+        
+    except Exception as e:
+        logger.error(f"Authentication error: {str(e)}")
+        raise HTTPException(status_code=401, detail="Invalid authentication token")
 
-# ===== EMAIL-BASED AUTH DEPENDENCY =====
+
+async def get_current_service_provider(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Verify JWT token and return current service provider"""
+    try:
+        uid, user_data = await get_current_user(credentials)
+        
+        if user_data.get("role") != "service_provider":
+            logger.warning(f"Access denied for UID {uid}: not a service provider")
+            raise HTTPException(status_code=403, detail="Access denied. Service provider role required")
+               
+        return uid, user_data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Service provider authentication error: {str(e)}")
+        raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+
 async def get_current_user_by_email(user_email: str):
     """Verify user exists by email and return user data"""
     try:
-        # Find user by email in user_collection
+       
         users = user_collection.where("email", "==", user_email.lower().strip()).limit(1).get()
         user_list = list(users)
         
@@ -38,8 +75,6 @@ async def get_current_user_by_email(user_email: str):
         raise HTTPException(status_code=500, detail=f"Authentication error: {str(e)}")
 
 
-
-# ===== HELPER FUNCTIONS =====
 def verify_reviewable_exists(reviewable_type: str, reviewable_id: str):
     """Verify that the destination or service exists"""
     if reviewable_type == "destination":
@@ -251,7 +286,6 @@ async def update_review(
         logger.error(f"Error updating review ID {review_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.delete("/reviews/{review_id}")
 async def delete_review(
     review_id: str,
@@ -418,8 +452,87 @@ async def get_destination_reviews(
     except Exception as e:
         logger.error(f"Error fetching reviews for destination ID {destination_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/services/my-reviews")
+async def get_my_service_reviews(
+    sort_by: Literal["recent", "helpful", "rating_high", "rating_low"] = Query("recent"),
+    min_rating: Optional[int] = Query(None, ge=1, le=5),
+    limit: int = Query(20, le=100),
+    offset: int = Query(0),
+    current_user: tuple = Depends(get_current_service_provider)
+):
+    """Get all reviews for the authenticated service provider"""
+    uid, user_data = current_user
     
+    try:
+        # Get service profile to get aggregated ratings
+        service_doc = profiles_collection.document(uid).get()
+        service_data = service_doc.to_dict() if service_doc.exists else {}
+        
+        query = reviews_collection\
+            .where("reviewable_type", "==", "service")\
+            .where("reviewable_id", "==", uid)\
+            .where("status", "==", "approved")
+        
+        if min_rating:
+            query = query.where("rating", ">=", min_rating)
+        
+        reviews = list(query.stream())
+        
+        reviews_list = []
+        for doc in reviews:
+            review_data = doc.to_dict()
+            review_data["id"] = doc.id
+            reviews_list.append(review_data)
+        
+        # Sort reviews
+        if sort_by == "recent":
+            reviews_list.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        elif sort_by == "helpful":
+            reviews_list.sort(key=lambda x: x.get("helpful_count", 0), reverse=True)
+        elif sort_by == "rating_high":
+            reviews_list.sort(key=lambda x: x.get("rating", 0), reverse=True)
+        elif sort_by == "rating_low":
+            reviews_list.sort(key=lambda x: x.get("rating", 0))
+        
+        total_count = len(reviews_list)
+        paginated_reviews = reviews_list[offset:offset + limit]
+        
+        # Prepare rating summary
+        rating_breakdown = service_data.get("rating_breakdown", {})
+        rating_summary = {
+            "average_rating": service_data.get("average_rating", 0.0),
+            "total_reviews": service_data.get("total_reviews", 0),
+            "breakdown": {
+                "5": rating_breakdown.get("5", 0),
+                "4": rating_breakdown.get("4", 0),
+                "3": rating_breakdown.get("3", 0),
+                "2": rating_breakdown.get("2", 0),
+                "1": rating_breakdown.get("1", 0),
+            }
+        }
+        
+        logger.info(f"Fetched reviews for service provider UID {uid} with {len(paginated_reviews)} reviews returned")
+        return {
+            "rating_summary": rating_summary,
+            "total_count": total_count,
+            "count": len(paginated_reviews),
+            "reviews": paginated_reviews,
+            "pagination": {
+                "limit": limit,
+                "offset": offset,
+                "has_more": offset + limit < total_count
+            }
+        }
     
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching reviews for service provider UID {uid}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/services/{service_id}/reviews")
 async def get_service_reviews(
     service_id: str,
@@ -528,14 +641,3 @@ async def get_user_reviews(
     except Exception as e:
         logger.error(f"Error fetching reviews by user ID {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-# @router.get("/reviews/my-reviews")
-# async def get_my_reviews(
-#     limit: int = Query(20, le=100),
-#     offset: int = Query(0),
-#     current_user: tuple = Depends(get_current_user)
-# ):
-#     """Get current user's reviews"""
-#     uid, user_data = current_user
-#     return await get_user_reviews(uid, limit, offset)

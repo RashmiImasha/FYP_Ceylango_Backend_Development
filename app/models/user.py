@@ -43,6 +43,12 @@ class PromotionalPoster(BaseModel):
     class Config:
         use_enum_values = True
 
+class UpdateUserProfileRequest(BaseModel):
+    full_name: str
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
 
 # Service Provider Profile Models
 class BaseServiceProfile(BaseModel):

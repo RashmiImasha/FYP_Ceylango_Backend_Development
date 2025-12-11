@@ -17,6 +17,7 @@ from app.routes.tripPlan_route import router as trip_router
 # service_provider routes
 from app.routes.service_providers_route import router as service_providers_route
 from app.routes.service_provider_profile_route import router as service_provider_profile_route
+from app.routes.service_provider_dashboard_route import router as service_provider_profile_dashboard_route
 from app.routes.review_routes import router as review_route
 from app.routes.popular_toprated_routes import router as popular_toprated_route
 from app.routes.dashboard_route import router as dashboard_route
@@ -56,6 +57,7 @@ app.include_router(trip_router, prefix="/trip")
 
 app.include_router(service_providers_route, prefix="/service_provider")
 app.include_router(service_provider_profile_route, prefix="/service_provider")
+app.include_router(service_provider_profile_dashboard_route, prefix="/service_provider")
 app.include_router(review_route, prefix="/review")
 app.include_router(popular_toprated_route, prefix="/review")
 

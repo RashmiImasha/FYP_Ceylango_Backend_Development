@@ -28,7 +28,7 @@ class DeleteImagesRequest(BaseModel):
     image_urls: List[str]
 
 
-# ===== AUTH DEPENDENCY =====
+
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Verify JWT token and return current user"""
     try:
@@ -52,7 +52,6 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=401, detail="Invalid authentication token")
 
 
-# ===== ENDPOINTS =====
 
 @router.get("/profile")
 async def get_my_profile(current_user: tuple = Depends(get_current_user)):
@@ -261,7 +260,6 @@ async def upload_profile_images(
         logger.error(f"Error uploading profile images for UID {uid}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.post("/profile/images/posters")
 async def upload_poster_image(
     poster: UploadFile = File(...),
@@ -381,7 +379,6 @@ async def update_poster_metadata(
     except Exception as e:
         logger.error(f"Error updating poster metadata: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-    
 
 @router.delete("/profile/images/profile")
 async def delete_profile_images(
@@ -481,7 +478,6 @@ async def delete_poster_image(
         logger.error(f"Error deleting poster for UID {uid}, Poster ID {poster_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.put("/profile/toggle-status")
 async def toggle_profile_status(current_user: tuple = Depends(get_current_user)):
     """Toggle service provider profile active/inactive status"""
@@ -514,37 +510,6 @@ async def toggle_profile_status(current_user: tuple = Depends(get_current_user))
         logger.error(f"Error toggling profile status for UID {uid}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/dashboard/stats")
-async def get_dashboard_stats(current_user: tuple = Depends(get_current_user)):
-    """Get dashboard statistics for service provider"""
-    uid, user_data = current_user
-    
-    try:
-        profile_doc = profiles_collection.document(uid).get()
-        
-        if not profile_doc.exists:
-            raise HTTPException(status_code=404, detail="Profile not found")
-        
-        profile_data = profile_doc.to_dict()
-        
-        completion_score = calculate_profile_completion(profile_data)
-        
-        stats = {
-            "profile_completion": completion_score,
-            "is_active": profile_data.get("is_active", True),
-            "profile_images_count": len(profile_data.get("profile_images", [])),
-            "poster_images_count": len(profile_data.get("poster_images", [])),
-            "amenities_count": len(profile_data.get("amenities", [])),
-            "has_coordinates": bool(profile_data.get("coordinates")),
-            "has_operating_hours": bool(profile_data.get("operating_hours")),
-            "has_social_media": bool(profile_data.get("social_media")),
-        }        
-        logger.info(f"Dashboard stats fetched for UID {uid}")
-        return {"stats": stats}
-    
-    except Exception as e:
-        logger.error(f"Error fetching dashboard stats for UID {uid}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/profile/{provider_uid}")
 async def get_service_provider_profile(provider_uid: str):
@@ -921,6 +886,43 @@ async def get_providers_by_district(
         }    
     except Exception as e:
         logger.error(f"Error fetching providers by district {district}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/profile/track-view/{provider_uid}")
+async def track_profile_view(provider_uid: str):
+    """
+    Track when someone views a service provider profile.
+    This endpoint is called from the Flutter app when opening a profile.
+    """
+    try:
+        profile_doc = profiles_collection.document(provider_uid)
+        profile_snapshot = profile_doc.get()
+        
+        if not profile_snapshot.exists:
+            logger.warning(f"Profile not found for view tracking: {provider_uid}")
+            raise HTTPException(status_code=404, detail="Profile not found")
+        
+        profile_data = profile_snapshot.to_dict()
+        current_views = profile_data.get("profile_views", 0)
+        
+        # Increment view count
+        profile_doc.update({
+            "profile_views": current_views + 1,
+            "last_viewed_at": datetime.now().isoformat()
+        })
+        
+        logger.info(f"Profile view tracked for UID {provider_uid}. New count: {current_views + 1}")
+        
+        return {
+            "status": "success",
+            "message": "Profile view tracked",
+            "profile_views": current_views + 1
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error tracking profile view for UID {provider_uid}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 def calculate_profile_completion(profile_data: Dict[str, Any]) -> Dict[str, Any]:
