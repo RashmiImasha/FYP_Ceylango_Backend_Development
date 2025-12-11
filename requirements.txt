@@ -14,13 +14,12 @@ imagehash
 
 # AI and Image Processing
 pinecone
-google-generativeai 
+google-generativeai
 torch==2.6.0
 torchvision==0.21.0
 transformers==4.42.0
 
-geopy 
+geopy
 gtts
 deep_translator
 sentence-transformers
- 
