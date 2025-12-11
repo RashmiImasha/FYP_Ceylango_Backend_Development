@@ -137,6 +137,14 @@ async def snap_image_with_agent(
         if not image_bytes:
             raise HTTPException(status_code=400, detail="Empty image file")
 
+        # validate image size (max 10MB)
+        MAX_IMAGE_SIZE = 10 * 1024 * 1024  
+        if len(image_bytes) > MAX_IMAGE_SIZE:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Image too large. Maximum size is {MAX_IMAGE_SIZE / 1024 / 1024}MB"
+            )
+        
         try:
             image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
         except Exception as e:
@@ -151,9 +159,15 @@ async def snap_image_with_agent(
             gps_location=gps_location,
         )
 
-        if not agent_result.get("success"):
-            raise HTTPException(status_code=500, detail=f"Agent failed: {agent_result.get('error')}")    
 
+        if not agent_result.get("success"):
+            error_msg = agent_result.get('error', 'Unknown error')
+            logger.error(f"[{request_id}] Agent identification failed: {error_msg}")
+            raise HTTPException(
+                status_code=500, 
+                detail="Could not identify the location. Please try again with a clearer image."
+            )
+        
         used_web_search = agent_result.get("used_web_search", False)
         if used_web_search:
             try:
@@ -183,10 +197,9 @@ async def snap_image_with_agent(
         raise
     except Exception as e:
         logger.error(f"Error in snap_image_with_agent: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Failed to process image: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to process image. Please try again.")
+    
+    
 
 @router.get("/getLanguage")
 async def get_supported_languages():

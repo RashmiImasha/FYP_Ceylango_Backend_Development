@@ -1,9 +1,9 @@
 import requests, re, logging, time
 from app.database.connection import db
 from app.config.settings import settings
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from pinecone import Pinecone
-from sentence_transformers import SentenceTransformer
 from deep_translator import GoogleTranslator
 from typing import List, Dict, Tuple
 
@@ -13,11 +13,10 @@ class ServicesInitializer:
     
     def __init__(self):
 
-        genai.configure(api_key=settings.GOOGLE_API_KEY)
+        self.genai_client = genai.Client(api_key=settings.GOOGLE_API_KEY)
         self.llm_model = settings.GEMINI_MODEL
         self.firestore_db = db
         self.OSRM_BASE_URL = settings.OSRM_URL      
-        self.embedding_model = SentenceTransformer(settings.TEXT_EMBEDDING_MODEL)
         
         # Pinecone
         pc = Pinecone(api_key=settings.PINECONE_API_KEY)
@@ -34,6 +33,15 @@ class ServicesInitializer:
         self.IMAGE_NAMESPACE = 'destinationImages' 
         
         logger.info(" All services initialized!")
+
+class EmbeddingAdapter:
+    def __init__(self, pinecone_service):
+        self.pinecone_service = pinecone_service
+    
+    def encode(self, text: str) -> List[float]:
+        return self.pinecone_service.generate_text_embedding(text)
+
+
 
 class LanguageDetector:
     
@@ -64,7 +72,6 @@ class LanguageDetector:
     @staticmethod
     def detect_language(text: str) -> str:
         """Detect language from text"""
-        # Check for non-Latin scripts
         for lang_code, pattern in LanguageDetector.LANGUAGE_PATTERNS.items():
             if re.search(pattern, text):
                 return lang_code
@@ -120,11 +127,12 @@ class QueryClassifier:
         
         # If query has location keywords (nearby, around) + destination keywords (beach, temple)
         # It should be SEMANTIC (search destinations), not location_based (search services)
-        if has_location_based and has_semantic:
-            return 'semantic'  # Search Pinecone for destinations
+        
         
         if has_directions:
             return 'directions'
+        elif has_location_based and has_semantic:
+            return 'semantic'  # Search Pinecone for destinations
         elif has_location_based:
             return 'location_based'  # Only for services
         elif has_semantic and has_structured:
@@ -377,7 +385,7 @@ class PineconeSearcher:
         """Search Pinecone for relevant destinations"""
         try:
             start_time = time.time()
-            query_vector = self.embedding_model.encode(query).tolist()
+            query_vector = self.embedding_model.encode(query)           
             encode_time = time.time() - start_time
             
             search_start = time.time()
@@ -662,6 +670,7 @@ class GeminiGenerator:
     @staticmethod
     def generate_response(query: str, context: str, language: str, 
                          query_type: str, 
+                         genai_client,
                          gemini_model: str = settings.GEMINI_MODEL,
                          response_temperature: float = 0.7,
                          max_output_tokens: int = 500) -> str:
@@ -728,12 +737,13 @@ class GeminiGenerator:
 
         try:
             # Generate response in English
-            model = genai.GenerativeModel(gemini_model)            
-            response = model.generate_content(
-                full_prompt,
-                generation_config=genai.types.GenerationConfig(
+            response = genai_client.models.generate_content(
+                model=gemini_model,
+                contents=full_prompt,
+                config=types.GenerateContentConfig(
                     temperature=response_temperature,
                     max_output_tokens=max_output_tokens,
+                    system_instruction=system_instruction  # Can add system instruction here
                 )
             )
             
@@ -759,14 +769,15 @@ class GeminiGenerator:
 
 class MultilingualRAGChatbot:
 
-    def __init__(self):
+    def __init__(self, pinecone_service=None):
 
         services = ServicesInitializer()
 
-        self.embedding_model = services.embedding_model
+        self.embedding_model = EmbeddingAdapter(pinecone_service)
         self.pinecone_index = services.pinecone_index
         self.firestore_db = services.firestore_db
         self.gemini_model = services.llm_model
+        self.genai_client = services.genai_client  
 
         self.pinecone_searcher = PineconeSearcher(
             index=self.pinecone_index,
@@ -824,6 +835,7 @@ class MultilingualRAGChatbot:
             context=context,
             language=lang,
             query_type=query_type,
+            genai_client=self.genai_client, 
         )
 
         return answer

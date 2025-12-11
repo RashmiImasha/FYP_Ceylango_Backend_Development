@@ -1,8 +1,8 @@
 from app.services.pineconeService import get_pinecone_service
 from app.config.settings import settings
-import google.generativeai as genai
+from google import genai
 from PIL import Image
-import logging, re, json, asyncio
+import logging, re, json, asyncio, io
 from typing import Dict, Tuple
 from geopy.geocoders import Nominatim
 from concurrent.futures import ThreadPoolExecutor
@@ -14,8 +14,8 @@ class LocationIdentificationAgent:
     def __init__(self):
         
         self.pinecone_service = get_pinecone_service()
-        genai.configure(api_key=settings.GOOGLE_API_KEY)
-        self.text_model = genai.GenerativeModel(settings.GEMINI_MODEL)
+        self.genai_client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+        self.gemini_model = settings.GEMINI_MODEL
 
         # Thread pool for CPU-bound operations
         self._executor = ThreadPoolExecutor(max_workers=10)
@@ -58,7 +58,8 @@ class LocationIdentificationAgent:
 
         loop = asyncio.get_event_loop()
         resized_image = await self._resize_image_async(image)
-        embedding = await loop.run_in_executor(self._executor, self.pinecone_service.generate_image_embedding, resized_image) 
+
+        embedding = await loop.run_in_executor(self._executor, self.pinecone_service.generate_image_embedding, resized_image)
 
         return resized_image, embedding, gps_location
     
@@ -88,7 +89,14 @@ class LocationIdentificationAgent:
                 Be detailed about VISIBLE features.
                 """
             
-            response = self.text_model.generate_content([prompt, image])            
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                self._executor,
+                lambda: self.genai_client.models.generate_content(
+                    model=self.gemini_model,
+                    contents=[prompt, image]
+                )
+            )
             return response.text
             
         except Exception as e:
@@ -193,7 +201,10 @@ class LocationIdentificationAgent:
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
                 self._executor,
-                lambda: self.text_model.generate_content(prompt)
+                lambda: self.genai_client.models.generate_content(
+                    model=self.gemini_model,
+                    contents=prompt
+                )
             )
             generated_text = response.text.strip()
             generated_text = re.sub(r'^```json\s*|\s*```$', '', generated_text, flags=re.MULTILINE).strip()
@@ -383,7 +394,10 @@ class LocationIdentificationAgent:
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(
                     self._executor,
-                    lambda: self.text_model.generate_content(prompt)
+                    lambda: self.genai_client.models.generate_content(
+                        model=self.gemini_model,
+                        contents=prompt
+                    )
                 )
                 
                 if not response or not response.text:

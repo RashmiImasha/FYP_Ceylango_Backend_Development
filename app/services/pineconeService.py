@@ -1,12 +1,11 @@
-from app.config.settings import settings
 from pinecone import Pinecone, ServerlessSpec
-from transformers import CLIPProcessor, CLIPModel
-from sentence_transformers import SentenceTransformer
 import torch, io, requests, logging
+from transformers import CLIPProcessor, CLIPModel
 from PIL import Image
 from typing import List, Dict
 from app.config.settings import settings
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +27,10 @@ class PineconeService:
             )
         
         self.index = self.pc.Index(self.index_name)
-
-        genai.configure(api_key=settings.GOOGLE_API_KEY)
-        # self.embedding_model = genai.GenerativeModel("text-embedding-001")
-
-        # initialize CLIP model for image embeddings
+        self.genai_client = genai.Client(api_key=settings.GOOGLE_API_KEY)
         self.clip_model = None
         self.clip_processor = None
+
 
     
     def _load_clip_model(self):
@@ -44,38 +40,33 @@ class PineconeService:
             self.clip_processor = CLIPProcessor.from_pretrained(settings.CLIP_MODEL)
             self.clip_model.eval()
 
-    # def _load_text_model(self):
-    #     if self.text_embedModel is None:
-    #         logger.info("Loading SentenceTransformer model...")
-    #         self.text_embedModel = SentenceTransformer(settings.TEXT_EMBEDDING_MODEL)
+        
+    
 
     def generate_text_embedding(self, text: str) -> List[float]:
 
         try:
-            # Generate 512-dimension embedding directly
-            # embedding = self.text_embedModel.encode(text).tolist()   
-            response = genai.embed_content(
-                content=text,
-                task_type="retrieval_document",
-                output_dimensionality=512
-            )         
-            return response['embedding']
+            response = self.genai_client.models.embed_content(
+                model="gemini-embedding-001",
+                contents=text,
+                config=types.EmbedContentConfig(
+                    task_type='RETRIEVAL_DOCUMENT',
+                    output_dimensionality=512
+                )                    
+            )      
+            embedding = response.embeddings[0].values
         
+            if embedding is None or len(embedding) != 512:
+                raise ValueError(f"Invalid embedding dimension: {len(embedding) if embedding else 0}")
+            return embedding
+            
         except Exception as e:
             logger.error(f"Error generating text embedding: {str(e)}")
             raise
     
-    
     def generate_image_embedding(self, image_source) -> List[float]:
-        """
-        Generate CLIP embedding from image        
-        Args:
-            image_source: PIL Image, bytes, or URL string            
-        Returns:
-            List of floats representing the embedding vector
-        """
-        self._load_clip_model()
         
+        self._load_clip_model()        
         try:
             image = None
             
@@ -98,9 +89,6 @@ class PineconeService:
             if image is None:
                 raise ValueError("Failed to create image object")
             
-            # OPTIMIZATION 1: Image is already optimized (resized + RGB) by agent
-            # No need to convert again - it comes from _optimize_image()
-            # Just ensure it's RGB (lightweight check)
             if image.mode != 'RGB':
                 image = image.convert('RGB')
             
@@ -120,9 +108,8 @@ class PineconeService:
         except Exception as e:
             logger.error(f"Embedding generation error: {str(e)}", exc_info=True)
             raise       
-        
     
-    
+         
     def upsert_destination_image(self, destination_id: str, destination_data: Dict) -> bool:
         """
         Add or update destination in Pinecone using ALL images + lat/lon for embedding and metadata
@@ -168,10 +155,9 @@ class PineconeService:
         except Exception as e:
             raise
 
+    
     def upsert_destination_text(self, destination_id: str, destination_data: Dict) -> bool:
-        """
-        Add or update destination text embedding in Pinecone
-        """
+        
         try:
             # Combine all text fields for embedding
             text_to_embed = f"""
@@ -180,6 +166,10 @@ class PineconeService:
                 Category: {destination_data.get('category_name', '')}
                 District: {destination_data.get('district_name', '')}
                 Location: {destination_data.get('latitude', 0)}, {destination_data.get('longitude', 0)}""".strip()
+            
+            if not text_to_embed or len(text_to_embed.strip()) < 10:
+                logger.warning(f"Insufficient text for destination {destination_id}")
+                return False
                             
             # Generate text embedding 
             embedding = self.generate_text_embedding(text_to_embed)

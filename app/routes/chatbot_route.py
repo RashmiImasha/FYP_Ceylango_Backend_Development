@@ -3,12 +3,14 @@ from google.cloud import firestore
 from app.models.chatbot import ChatRequest, ChatMessage, ChatSession
 from app.database.connection import chatbot_history_collection
 from app.services.chatbot_service import MultilingualRAGChatbot
+from app.services.pineconeService import PineconeService
 import logging, uuid, time
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-chatbot = MultilingualRAGChatbot()
+pinecone_service = PineconeService()
+chatbot = MultilingualRAGChatbot(pinecone_service)
 
 @router.post("/message")
 def chat_message(request: ChatRequest):

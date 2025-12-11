@@ -1,9 +1,10 @@
 from firebase_admin import firestore
 from app.config.settings import settings
 from app.database.connection import db, tripPlan_collection, destination_collection
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from pinecone import Pinecone
-from sentence_transformers import SentenceTransformer
+from app.services.pineconeService import PineconeService
 from app.utils.tripPlan_utils import get_osrm_route, get_visit_duration, get_destination_categories_for_interests
 from app.models.tripPlan import TripPlanRequest
 from datetime import datetime, timedelta
@@ -12,6 +13,7 @@ import logging, asyncio, json
 import numpy as np
 
 logger = logging.getLogger(__name__)
+pinecone_service = PineconeService()
 
 class TripPlanningConfig:
     # Scoring weights
@@ -240,28 +242,30 @@ class ServicesInitializer:
         self.pinecone_index = pc.Index(settings.PINECONE_INDEX_NAME)
         self.TEXT_NAMESPACE = 'destinationTextdata' 
         self.OSRM_BASE_URL = settings.OSRM_URL 
-        genai.configure(api_key=settings.GOOGLE_API_KEY)
-        self.llm_model = genai.GenerativeModel(settings.GEMINI_MODEL)
-        self.embedding_model = SentenceTransformer(settings.TEXT_EMBEDDING_MODEL)
+
+        self.genai_client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+        self.llm_model = self.genai_client
+        self.gemini_model_name = settings.GEMINI_MODEL
+
+
 
 class DestinationRetriever:
 
     def __init__(self, services):
         self.pinecone_index = services.pinecone_index
         self.firestore_db = services.firestore_db
-        self.embedding_model = services.embedding_model
+        # self.embedding_model = services.embedding_model
         self.namespace = services.TEXT_NAMESPACE
 
     async def generate_query_embedding(self, interests: List[str], group_type: str) -> List[float]:
         query_text = f"{' '.join(interests)} travel {group_type} tourism trip vacation"
         try:
-            embedding = self.embedding_model.encode(query_text, convert_to_numpy=True)
-            return embedding.tolist()
+            embedding = pinecone_service.generate_text_embedding(query_text)
+            return embedding
 
         except Exception as e:
-            logger.error(f"[Embedding ERROR] {e}")
-            dim = self.embedding_model.get_sentence_embedding_dimension()
-            return [0.0] * dim
+            logger.error(f"[Embedding ERROR] {e}")          
+            return [0.0] * 512
 
     async def query_pinecone(self, embedding, districts: List[str], categories: List[str] = None, top_k=30):
         
@@ -391,7 +395,6 @@ class TripPreprocessor:
     
     def __init__(self, services: ServicesInitializer):        
         self.osrm_url = services.OSRM_BASE_URL
-        self.embedding_model = services.embedding_model
     
     async def calculate_distance_and_time_matrices(self, items: List[Dict]) -> tuple:
 
@@ -430,13 +433,12 @@ class TripPreprocessor:
         return distance_matrix, time_matrix
     
     def get_or_create_category_embedding(self, category_name: str) -> np.ndarray:
-        """Cache category embeddings"""
         if category_name not in TripPreprocessor._category_cache:
-            TripPreprocessor._category_cache[category_name] = self.embedding_model.encode(
-                category_name, convert_to_numpy=True
-            )
+            embedding = pinecone_service.generate_text_embedding(category_name)
+            TripPreprocessor._category_cache[category_name] = np.array(embedding)
         return TripPreprocessor._category_cache[category_name]
-    
+
+
     def calculate_category_interest_score(self, category_name: str, interest_embeddings: np.ndarray) -> float:
         """Calculate semantic similarity"""
         category_embedding = self.get_or_create_category_embedding(category_name)
@@ -458,7 +460,24 @@ class TripPreprocessor:
     ) -> List[Dict]:
         """Filter and score destinations """
 
-        interest_embeddings = self.embedding_model.encode(interests, convert_to_numpy=True)        
+        interest_embeddings = []
+        for interest in interests:
+            # Convert enum to string value if needed
+            interest_text = interest.value if hasattr(interest, 'value') else str(interest)
+            try:
+                embedding = pinecone_service.generate_text_embedding(interest_text)
+                interest_embeddings.append(np.array(embedding))
+            except Exception as e:
+                logger.error(f"Failed to embed interest '{interest_text}': {e}")
+                # Skip this interest if embedding fails
+                continue
+
+        if not interest_embeddings:
+            logger.error("No valid interest embeddings generated")
+            return []
+            
+        interest_embeddings = np.array(interest_embeddings)
+
         all_items = []
         
         # Process destinations
@@ -517,7 +536,8 @@ class TripPlanningAgent:
     """AI Agent for itinerary planning"""
     
     def __init__(self, services):        
-        self.llm_model = services.llm_model
+        self.llm_client = services.llm_model
+        self.model_name = services.gemini_model_name
     
     def construct_planning_prompt(
         self,
@@ -670,9 +690,10 @@ class TripPlanningAgent:
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
                 None,
-                lambda: self.llm_model.generate_content(
-                    prompt,
-                    generation_config=genai.types.GenerationConfig(
+                lambda: self.llm_client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
                         temperature=TripPlanningConfig.LLM_TEMPERATURE,
                         top_p=TripPlanningConfig.LLM_TOP_P,
                         top_k=TripPlanningConfig.LLM_TOP_K,
