@@ -14,7 +14,9 @@ imagehash
 
 # AI and Image Processing
 pinecone
-google-generativeai 
+google-genai
+transformers==4.42.0
+torch==2.6.0
 
 
 geopy 
