@@ -269,7 +269,12 @@ class LocationIdentificationAgent:
                     address.get("attraction") or
                     address.get("historic") or
                     address.get("building") or
-                    address.get("monument")
+                    address.get("monument") or
+                    address.get("university") or  # Add this
+                    address.get("college") or      # Add this
+                    address.get("school") or       # Add this
+                    address.get("house_name") or   # Add this
+                    address.get("road") 
                 )
                 
                 logger.info(f"Geocoded landmark name: {geocoded_landmark_name}")
