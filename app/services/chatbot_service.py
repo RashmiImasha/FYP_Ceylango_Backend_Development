@@ -1,3 +1,10 @@
+
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.prompts import ChatPromptTemplate
+from typing import List, Dict, Tuple, Literal, Optional
+from pydantic import BaseModel
+import json
+
 import requests, re, logging, time
 from app.database.connection import db
 from app.config.settings import settings
@@ -9,6 +16,28 @@ from typing import List, Dict, Tuple
 
 logger = logging.getLogger(__name__)
 
+class QueryClassification(BaseModel):
+    label: Literal[
+        "semantic",
+        "structured",
+        "directions",        
+        "complex"
+    ]
+    confidence: float
+    reason: str
+    matched_signals: List[str]
+
+    # Only populated when label == SEMANTIC
+    semantic_category: Optional[Literal[
+        "Historical",
+        "Beach",
+        "Adventure",
+        "Mountains",
+        "Religious",
+        "Wildlife",
+        "Natural Park"
+    ]] = None
+
 class ServicesInitializer:
     
     def __init__(self):
@@ -18,6 +47,7 @@ class ServicesInitializer:
         self.firestore_db = db
         self.OSRM_BASE_URL = settings.OSRM_URL      
         self.embedding_model = SentenceTransformer(settings.TEXT_EMBEDDING_MODEL)
+        self.MAP_API_KEY = "AIzaSyAGPIqilyNhU19GUwFPRQwRRDGGlhj2En4"
         
         # Pinecone
         pc = Pinecone(api_key=settings.PINECONE_API_KEY)
@@ -77,8 +107,8 @@ class LanguageDetector:
         """Get full language name"""
         return LanguageDetector.LANGUAGE_NAMES.get(code, 'English')
 
+        
 class QueryClassifier:
-    
     SEMANTIC_KEYWORDS = [
         'romantic', 'peaceful', 'adventure', 'beautiful', 'authentic',
         'hidden', 'unique', 'best', 'amazing', 'stunning', 'tranquil',
@@ -91,7 +121,7 @@ class QueryClassifier:
     
     STRUCTURED_KEYWORDS = [
         'hotel', 'restaurant', 'shop', 'rental', 'car', 'bike',
-        'event', 'open', 'near', 'price', 'cheap', 'expensive',
+        'event', 'open', 'price', 'cheap', 'expensive',
         'today', 'tonight', 'weekend', 'available',
         'service', 'services', 'food', 'stay', 'accommodation',          
     ]
@@ -103,39 +133,132 @@ class QueryClassifier:
         'distance', 'how far', 'driving', 'walking',        
     ]
     
-    LOCATION_BASED_KEYWORDS = [  
-        'around', 'nearby', 'near me', 'close to', 'within',
-        'nearest', 'closest',         
-    ]
-    
-    @classmethod
-    def classify(cls, query: str) -> str:
-        """Classify query"""
-        query_lower = query.lower()
-    
-        has_location_based = any(kw in query_lower for kw in cls.LOCATION_BASED_KEYWORDS)
-        has_semantic = any(kw in query_lower for kw in cls.SEMANTIC_KEYWORDS)
-        has_structured = any(kw in query_lower for kw in cls.STRUCTURED_KEYWORDS)
-        has_directions = any(kw in query_lower for kw in cls.DIRECTIONS_KEYWORDS)
+              
+    def classify(query: str) -> QueryClassification:
+        # logger.info(f"QueryClassifier: Classifying query: {query}")
+        SYSTEM_PROMPT = """
+        You are a query classification engine.
+
+        Classify the user query into exactly ONE label:
+
+        semantic: descriptive, experiential, or destination discovery queries
+        structured: services, hotels, restaurants, prices, availability, events
+        directions: routes, distance, navigation, travel paths        
+        complex: both semantic and structured intent
+
+        If and ONLY IF label == semantic:
+        Choose exactly ONE semantic_category from:
+        - Historical
+        - Beach
+        - Adventure
+        - Mountains
+        - Religious
+        - Wildlife
+        - Natural Park
+
+        Rules:
+        - Location + semantic keywords → semantic
+        - Semantic + structured → complex
+        - Directions keywords → directions        
+        - Otherwise → semantic
+
+        Important:
+        - semantic_category MUST be null for non-semantic labels
+        - Do NOT invent categories
+        - Return ONLY valid JSON matching the schema
+        """
+
+        FEW_SHOT_EXAMPLES = """
+        Example:
+        Query: "most beautiful beaches near colombo"
+        Output:
+        {{
+        "label": "semantic",
+        "confidence": 0.92,
+        "reason": "User is searching for beach destinations",
+        "matched_signals": ["beautiful", "beaches", "near"],
+        "semantic_category": "Beach"
+        }}
+
+        Example:
+        Query: "best hiking places in knuckles"
+        Output:
+        {{
+        "label": "semantic",
+        "confidence": 0.91,
+        "reason": "User wants adventure destinations",
+        "matched_signals": ["hiking", "best"],
+        "semantic_category": "Adventure"
+        }}
+
+        Example:
+        Query: "ancient temples in anuradhapura"
+        Output:
+        {{
+        "label": "semantic",
+        "confidence": 0.93,
+        "reason": "User is looking for religious and historical places",
+        "matched_signals": ["ancient", "temples"],
+        "semantic_category": "Religious"
+        }}
+
+        Example:
+        Query: "cheap hotels in kandy tonight"
+        Output:
+        {{
+        "label": "structured",
+        "confidence": 0.95,
+        "reason": "User asks about accommodation pricing",
+        "matched_signals": ["cheap", "hotels", "tonight"],
+        "semantic_category": null
+        }}
+
+        Example:
+        Query: "how to go from colombo to sigiriya"
+        Output:
+        {{
+        "label": "directions",
+        "confidence": 0.96,
+        "reason": "Navigation between two locations",
+        "matched_signals": ["how to go", "from", "to"],
+        "semantic_category": null
+        }}
+        """
         
-        # If query has location keywords (nearby, around) + destination keywords (beach, temple)
-        # It should be SEMANTIC (search destinations), not location_based (search services)
-        if has_location_based and has_semantic:
-            return 'semantic'  # Search Pinecone for destinations
+        prompt_text = f"""
+            {FEW_SHOT_EXAMPLES}
+
+            Now classify the following query:
+
+            Query: "{query}"
+            """
+        llm = ChatGoogleGenerativeAI(
+                model=settings.GEMINI_MODEL, temperature=0.7,google_api_key=settings.GOOGLE_API_KEY
+        )
         
-        if has_directions:
-            return 'directions'
-        elif has_location_based:
-            return 'location_based'  # Only for services
-        elif has_semantic and has_structured:
-            return 'complex'
-        elif has_semantic:
-            return 'semantic'
-        elif has_structured:
-            return 'structured'
-        else:
-            return 'semantic'
+        model = llm.with_structured_output(QueryClassification)
+        prompt_template = ChatPromptTemplate.from_messages([
+                ("system", SYSTEM_PROMPT),
+                ("user", "{few_shot_examples}\n\nNow classify the following query:\n\nQuery: \"{query}\"")
+                # ("user", prompt_text)
+            ])
         
+        messages = prompt_template.format_messages(
+            few_shot_examples=FEW_SHOT_EXAMPLES,
+            query=query
+        )
+
+        # Format the template into a PromptValue and convert to messages
+        # prompt_value = prompt_template.format_prompt()
+        # messages = prompt_value.to_messages()
+
+        # invoke the model with a list of BaseMessages (valid input type)
+        response = model.invoke(messages)
+        logger.info(f"QueryClassifier: Classified query as {response} ")
+
+        return response
+
+
 class TranslationService:
     
     @staticmethod
@@ -241,7 +364,8 @@ class OSRMRoutingService:
                     result = {
                         'distance': route['distance'],
                         'duration': route['duration'],
-                        'steps': steps
+                        'steps': steps,
+                        'geometry': route.get('geometry', {})
                     }
                     
                     logger.info(f" OSRMRoutingService: Route found: {result['distance']/1000:.1f}km, {result['duration']/60:.0f} minutes")
@@ -291,10 +415,11 @@ class LocationExtractor:
 class DirectionsHandler:
     """Handle directions queries using database + geocoding + OSRM"""
     
-    def __init__(self, firebase_searcher, osrm_base_url: str):
+    def __init__(self, firebase_searcher, osrm_base_url: str, map_apiKey: str = None):
         self.firebase_searcher = firebase_searcher
         self.osrm_base_url = osrm_base_url
-    
+        self.map_apiKey = map_apiKey
+
     def get_coordinates(self, place_name: str, user_location: Tuple[float, float] = None) -> Tuple[float, float]:
         """
         Get coordinates for a place
@@ -358,12 +483,39 @@ class DirectionsHandler:
         if not route:
             return {'error': 'Could not find a route.'}
         
-        route['from_place'] = from_place or "Your location"
-        route['to_place'] = to_place
-        route['from_coords'] = from_coords
-        route['to_coords'] = to_coords
+        result = {
+            'from_place': from_place or "Your location",
+            'to_place': to_place,
+            'from_coords': {'lat': from_coords[0], 'lng': from_coords[1]},
+            'to_coords': {'lat': to_coords[0], 'lng': to_coords[1]},
+            'distance': route['distance'],
+            'duration': route['duration'],
+            'distance_text': f"{route['distance']/1000:.1f} km",
+            'duration_text': f"{int(route['duration']/60)} min",
+            'steps': route.get('steps', []),
+            'route_polyline': self._extract_polyline(route),  # For map rendering
+            'google_maps_api_key': self.map_apiKey,
+            'show_map': True
+        }
+        return result
+    
+    def _extract_polyline(self, route: Dict) -> List[Dict]:
+        """Extract polyline coordinates from OSRM route for map rendering"""
+        polyline = []
         
-        return route
+        if 'geometry' in route and 'coordinates' in route['geometry']:
+            # OSRM returns [lon, lat] format, convert to [lat, lon]
+            for coord in route['geometry']['coordinates']:
+                polyline.append({'lat': coord[1], 'lng': coord[0]})
+        
+        return polyline
+        
+        # route['from_place'] = from_place or "Your location"
+        # route['to_place'] = to_place
+        # route['from_coords'] = from_coords
+        # route['to_coords'] = to_coords
+        
+        # return route
 
 class PineconeSearcher:
     """Search destinations in Pinecone using vector similarity"""
@@ -373,7 +525,7 @@ class PineconeSearcher:
         self.embedding_model = embedding_model
         self.namespace = namespace 
     
-    def search(self, query: str, top_k: int = 5, filters: Dict = None) -> List[Dict]:
+    def search(self, query: str, top_k: int = 25, filters: Dict = None) -> List[Dict]:
         """Search Pinecone for relevant destinations"""
         try:
             start_time = time.time()
@@ -400,7 +552,7 @@ class PineconeSearcher:
                     'metadata': match['metadata']
                 })
             
-            logger.info(f"PineconeSearcher: found {len(destinations)} destinations in namespace '{self.namespace}'")
+            logger.info(f"PineconeSearcher: found {len(destinations)} destinations {destinations}'")
             return destinations
             
         except Exception as e:
@@ -510,12 +662,12 @@ class FirebaseSearcher:
 class RetrievalOrchestrator:
     """Orchestrate retrieval from multiple sources including directions"""
     
-    def __init__(self, pinecone_searcher, firebase_searcher, osrm_base_url: str):
+    def __init__(self, pinecone_searcher, firebase_searcher, osrm_base_url: str, map_apiKey: str=None):
         self.pinecone_searcher = pinecone_searcher
         self.firebase_searcher = firebase_searcher
         self.directions_handler = DirectionsHandler(firebase_searcher, osrm_base_url)
     
-    def retrieve(self, query: str, query_type: str, 
+    def retrieve(self, query: str, query_type: str, semantic_type: str = None,
                 user_location: Tuple[float, float] = None,
                 service_type: str = None,
                 location: str = None) -> Dict:
@@ -530,30 +682,17 @@ class RetrievalOrchestrator:
         if query_type == 'directions':
             results['route'] = self.directions_handler.handle_directions_query(query, user_location)            
         elif query_type == 'semantic':
-            results['destinations'] = self.pinecone_searcher.search(query, top_k=5)            
+            filter={'category_name': semantic_type} 
+            results['destinations'] = self.pinecone_searcher.search(query, top_k=25, filters=filter)            
         elif query_type == 'structured':
             results['services'] = self.firebase_searcher.search_services(
                 service_type=service_type,
                 location=location,
                 limit=10
             )            
-        elif query_type == 'location_based':
-            if user_location:
-                results['services'] = self.firebase_searcher.search_services_near_location(
-                    lat=user_location[0],
-                    lon=user_location[1],
-                    service_type=service_type,
-                    radius_km=10,
-                    limit=10
-                )
-            else:
-                results['services'] = self.firebase_searcher.search_services(
-                    service_type=service_type,
-                    location=location,
-                    limit=10
-                )            
+        
         elif query_type == 'complex':
-            results['destinations'] = self.pinecone_searcher.search(query, top_k=3)
+            results['destinations'] = self.pinecone_searcher.search(query, top_k=25)
             
             if user_location:
                 results['services'] = self.firebase_searcher.search_services_near_location(
@@ -573,18 +712,23 @@ class RetrievalOrchestrator:
         # Enrich destinations with full data from Firebase
         for dest in results['destinations']:
             destination_id = dest['id']
+            logger.info(f" {dest}")
             try:
                 # Fetch full destination data from Firebase 'destination' collection
                 doc = self.firebase_searcher.db.collection('destination').document(destination_id).get()
                 if doc.exists:
                     dest['full_data'] = doc.to_dict()
+                    logger.info(f"{doc.to_dict()}")
                 else:
                     dest['full_data'] = {}
+                    logger.info(f"RetrievalOrchestrator: No full data for destination {destination_id}")
             except Exception as e:
                 logger.error(f"RetrievalOrchestrator: Error fetching destination {destination_id}: {e}")
                 dest['full_data'] = {}
-        
+                    
         return results
+    
+    
 
 class ContextBuilder:
     """Build formatted context for LLM from retrieved data"""
@@ -636,6 +780,7 @@ class ContextBuilder:
                     Description: {description[:300]}...
                     Rating: {rating}/5
                     """
+                logger.info(f" Destination info: {dest_info}")
                 context_parts.append(dest_info)
         
         # Add services
@@ -673,15 +818,6 @@ class GeminiGenerator:
                 Be concise but include all important details like distance, duration, and key turns.
                 Format the response naturally as if giving directions to a friend.
                 Maximum 4-5 sentences total.
-            """
-
-        elif query_type == 'location_based':
-            system_instruction = """
-                You are a helpful tourism assistant for Sri Lanka.
-                Provide information about services near the user's location.
-                Include distance information when available.
-                Be friendly and highlight the closest/most relevant options first.
-                Maximum 4-5 services total.
             """
 
         elif query_type == 'structured':
@@ -778,12 +914,13 @@ class MultilingualRAGChatbot:
         self.retrieval = RetrievalOrchestrator(
             self.pinecone_searcher,
             self.firebase_searcher,
-            osrm_base_url=services.OSRM_BASE_URL
+            osrm_base_url=services.OSRM_BASE_URL,
+            map_apiKey=services.MAP_API_KEY
         )
         logger.info("RAG Chatbot initialized and ready!")
 
     def chat(self, user_query: str, user_location: Tuple[float, float] = None,
-            chat_history: List[Dict] = None) -> str:
+            chat_history: List[Dict] = None) -> Dict:
         
         """
         Chat with history context support        
@@ -807,16 +944,21 @@ class MultilingualRAGChatbot:
             ])
             translated_query = f"Chat History:\n{history_context}\n\nCurrent Question: {translated_query}"
 
-        query_type = QueryClassifier.classify(translated_query)
+        response = QueryClassifier.classify(translated_query)
+        query_type = response.label
+        semantic_type = response.semantic_category or None
+        # logger.info(f"Chatbot: Query type determined as {response}")
 
         # Retrieve documents / services / directions
         results = self.retrieval.retrieve(
             query=translated_query,
             query_type=query_type,
+            semantic_type=semantic_type,
             user_location=user_location )
 
         # Build context for LLM
         context = ContextBuilder.build_context(results, translated_query, lang)
+        logger.info(f" {context} ")
 
         # Generate answer using Gemini
         answer = GeminiGenerator.generate_response(
@@ -825,7 +967,16 @@ class MultilingualRAGChatbot:
             language=lang,
             query_type=query_type,
         )
+        response_data = {
+            'response': answer,
+            'query_type': query_type
+        }
+        # Add map data if it's a directions query
+        if query_type == 'directions' and results.get('route'):
+            route_data = results['route']
+            if 'error' not in route_data and route_data.get('show_map'):
+                response_data['map_data'] = route_data
 
-        return answer
+        return response_data
 
 

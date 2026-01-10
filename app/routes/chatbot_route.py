@@ -79,6 +79,8 @@ def chat_message(request: ChatRequest):
             })
         
         logger.info(f"Chat saved to session: {session_id}")
+
+    
         
     except Exception as e:
         logger.error(f"Failed to save chat history: {e}")
@@ -88,6 +90,8 @@ def chat_message(request: ChatRequest):
         "session_id": session_id,
         "response_time": response_time 
     }
+
+
     
 
 @router.get("/history/{session_id}")

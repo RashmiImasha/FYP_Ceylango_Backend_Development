@@ -180,7 +180,9 @@ class PineconeService:
                 'destination_id': destination_id,
                 'destination_name': destination_data.get('destination_name', '')[:200],   
                 'district_name': destination_data.get('district_name', ''),  
-                'category_name': destination_data.get('category_name', '')             
+                'category_name': destination_data.get('category_name', ''),
+                'latitude': float(destination_data.get('latitude', 0)),  # ← ADD THIS
+                'longitude': float(destination_data.get('longitude', 0))             
             }
             
             # Upsert to Pinecone 
