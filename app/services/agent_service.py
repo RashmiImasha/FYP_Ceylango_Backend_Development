@@ -383,7 +383,7 @@ class LocationIdentificationAgent:
 
                     Generate the JSON now:"""
 
-            # ✅ FIX 3: Robust Gemini call with error handling
+            # Robust Gemini call with error handling
             try:
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(
@@ -400,7 +400,7 @@ class LocationIdentificationAgent:
                 # Remove markdown fences
                 generated_text = re.sub(r'^```json\s*|\s*```$', '', generated_text, flags=re.MULTILINE).strip()
                 
-                # ✅ FIX 4: Validate JSON before parsing
+                # Validate JSON before parsing
                 if not generated_text or not generated_text.startswith('{'):
                     json_match = re.search(r'\{.*\}', generated_text, re.DOTALL)
                     if json_match:

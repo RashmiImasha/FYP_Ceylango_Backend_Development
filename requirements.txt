@@ -18,6 +18,8 @@ google-generativeai
 torch==2.6.0
 torchvision==0.21.0
 transformers==4.42.0
+langchain-google-genai 
+langchain
 
 geopy
 gtts
