@@ -22,7 +22,7 @@ The system integrates **mobile applications, web portals, and AI backend service
 - [System Architecture](#system-architecture)
 - [AI Features](#ai-features)
 - [Tech Stack](#tech-stack)
-- [Demo](#demo)
+- [Project Demonstration](#demo)
 
 ---
 
@@ -59,7 +59,7 @@ The platform provides an **AI-driven tourism assistance system** that helps tour
 # System Architecture
 
 The system follows a **Full-Stack AI Architecture** integrating mobile apps, web portals, and AI services.
-<img src="main/readme_images/system_diagram.png" width="700">
+<img src="readme_images/system_diagram.png" width="700">
 
 ## Frontend
 
