@@ -22,7 +22,7 @@ Sri Lanka currently lacks a locally developed tourism platform that effectively 
 Existing travel platforms often fail to highlight:
 
 - Hidden attractions  
-- Nearby services  
+- Nearby services (night shops, events, vehical rentals etc)
 - Historical and cultural locations  
 
 Additionally, tourists frequently face **language barriers** when communicating with locals and struggle to access reliable travel information.
@@ -33,7 +33,7 @@ This project addresses these challenges by building an **AI-powered tourism plat
 
 # Proposed Solution
 
-The platform provides an **AI-driven tourism assistance system** that helps tourists discover destinations, learn about locations, and plan trips efficiently.
+The platform provides an **AI-driven tourism assistance system** that helps tourists discover destinations and services, learn about locations, and plan trips efficiently.
 
 ### Key Features
 
@@ -42,7 +42,6 @@ The platform provides an **AI-driven tourism assistance system** that helps tour
 - Intelligent trip planning
 - Location-aware recommendations
 - Nearby services and emergency contacts
-- AI-powered tourism content generation
 
 ---
 
@@ -93,35 +92,48 @@ Pipeline:
 
 ## Multilingual AI Chatbot
 
-An AI chatbot assists tourists by answering questions about:
-
-- Destinations
-- Cultural sites
-- Nearby services
-- Travel guidance
+Provides tourism assistance in multiple languages and answers questions about locations, services, and travel guidance.
 
 ---
 
 ## Intelligent Trip Planning
 
-The system generates **personalized travel plans** based on:
-
-- User preferences
-- Location
-- Available attractions
+Generates travel itineraries based on user preferences, location, and available attractions.
 
 ---
 
 ## Location-Aware Recommendations
 
-Using **GPS and OSRM routing engine**, the system suggests:
-
-- Nearby attractions
-- Restaurants and services
-- Emergency contacts
+Using **GPS and OSRM routing engine**, the system suggests Nearby attractions, Restaurants and services, Emergency contacts
 
 ---
 
-# System Architecture Diagram
+# Tech Stack
 
-*(Add your architecture diagram here)*
+### Programming Languages
+- Python | JavaScript | TypeScript
+
+### AI / Machine Learning
+- Large Language Models (LLMs) | Retrieval Augmented Generation (RAG) | Vector Embeddings | Pinecone Vector Database | LangChain
+
+### Backend
+- FastAPI | Firebase
+
+### Frontend
+- Flutter | React.js
+
+### Infrastructure
+- Docker | AWS EC2
+
+### APIs
+- Google Gemini API | OSRM Routing Engine | Google map API
+
+---
+
+# Demo
+
+Demo Video:  
+(Add YouTube or Google Drive link)
+
+---
+
