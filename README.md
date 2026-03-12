@@ -59,6 +59,8 @@ The platform provides an **AI-driven tourism assistance system** that helps tour
 # System Architecture
 
 The system follows a **Full-Stack AI Architecture** integrating mobile apps, web portals, and AI services.
+
+
 <img src="readme_images/system_diagram.png" width="700">
 
 ## Frontend
