@@ -15,6 +15,17 @@ The system integrates **mobile applications, web portals, and AI backend service
 
 ---
 
+## Table of Contents
+
+- [Problem Statement](#problem-statement)
+- [Proposed Solution](#proposed-solution)
+- [System Architecture](#system-architecture)
+- [AI Features](#ai-features)
+- [Tech Stack](#tech-stack)
+- [Demo](#demo)
+
+---
+
 # Problem Statement
 
 Sri Lanka currently lacks a locally developed tourism platform that effectively utilizes modern technologies such as **Artificial Intelligence**.
@@ -48,6 +59,7 @@ The platform provides an **AI-driven tourism assistance system** that helps tour
 # System Architecture
 
 The system follows a **Full-Stack AI Architecture** integrating mobile apps, web portals, and AI services.
+<img src="main/readme_images/system_diagram.png" width="700">
 
 ## Frontend
 
@@ -110,30 +122,19 @@ Using **GPS and OSRM routing engine**, the system suggests Nearby attractions, R
 
 # Tech Stack
 
-### Programming Languages
-- Python | JavaScript | TypeScript
-
-### AI / Machine Learning
-- Large Language Models (LLMs) | Retrieval Augmented Generation (RAG) | Vector Embeddings | Pinecone Vector Database | LangChain
-
-### Backend
-- FastAPI | Firebase
-
-### Frontend
-- Flutter | React.js
-
-### Infrastructure
-- Docker | AWS EC2
-
-### APIs
-- Google Gemini API | OSRM Routing Engine | Google map API
+- **Programming Languages** : Python | JavaScript | TypeScript
+- **Backend**  : FastAPI | Firebase
+- **Frontend** : Flutter | React.js
+- **AI**       : LLMs | RAG | Vector Embeddings | Pinecone Vector Database | LangChain
+- **APIs**     : Google Gemini API | OSRM Routing Engine | Google map API
+- **Infrastructure**  : Docker | AWS EC2
 
 ---
 
 # Demo
 
-Demo Video:  
-(Add YouTube or Google Drive link)
+Watch the full system demonstration here:  
+[Click to view the demo](https://drive.google.com/file/d/15xS4y2Od0BG3fZvWXAiwhhqHOw5ssd_i/view?usp=sharing)
 
 ---
 
