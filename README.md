@@ -61,30 +61,17 @@ The platform provides an **AI-driven tourism assistance system** that helps tour
 The system follows a **Full-Stack AI Architecture** integrating mobile apps, web portals, and AI services.
 
 
-<img src="readme_images/system_diagram.png" width="700">
+<img src="readme_images/system_diagram.png" width="900">
 
-## Frontend
+### Tech Stack
 
-- Flutter mobile application for tourists
-- React web portal for administrators
-- React web portal for service providers
-
-## Backend
-
-- Python-based API services using FastAPI
-- AI processing services for LLM pipelines
-
-## Databases
-
-- Firebase Firestore (Operational data)
-- Pinecone Vector Database (Semantic search)
-
-## AI Components
-
-- Large Language Models (LLMs)
-- Retrieval Augmented Generation (RAG)
-- Vector Embeddings
-- Multimodal AI (Image + Text)
+- **Programming Languages** : Python | JavaScript | TypeScript
+- **Backend**  : FastAPI 
+- **Frontend** : Flutter | React.js
+- **Databases** : Firebase(for Operational data) | Pinecone Vector Database (Semantic search)
+- **AI**       : LLMs | RAG | Vector Embeddings | LangChain | Multimodal AI (Image + Text)
+- **APIs**     : Google Gemini API | OSRM Routing Engine | Google map API
+- **Infrastructure**  : Docker | AWS EC2
 
 ---
 
@@ -92,11 +79,19 @@ The system follows a **Full-Stack AI Architecture** integrating mobile apps, web
 
 ## Image-Based Tourism Content Generation
 
-Users can capture an image of a location and automatically generate tourism-related information.
+This feature enables users to capture a image of a location and automatically generate rich, structured tourism friendly content including historical background, cultural insights etc by leveraging a **multimodal Retrieval-Augmented Generation (RAG) pipeline.**
 
-Pipeline:
+---
 
-1. Image captured through mobile application
+### 🔹 Overview
+
+The system integrates **computer vision, geospatial intelligence, and large language models (LLMs)** to identify Sri Lankan tourist destinations using **both image input and real-time GPS data.** It combines **vector similarity search, reverse geocoding, and contextual reasoning** to produce accurate and user-friendly outputs.
+
+---
+
+### 🔹 Pipeline
+
+1. Image captured & location is tracked through mobile application
 2. Image embeddings generated
 3. Vector similarity search performed using Pinecone
 4. Relevant location data retrieved
@@ -104,33 +99,94 @@ Pipeline:
 
 ---
 
+### 🔹 Key Highlights
+
+- Multimodal AI pipeline (Vision + Location + Language)
+- Conditional RAG architecture for improved accuracy
+- Real-time geospatial filtering and contextual reasoning
+- Scalable vector search with Pinecone
+- Multilingual and voice-enabled user experience
+
+<img src="readme_images/system_diagram.png" width="700">
+https://github.com/RashmiImasha/Music_Web_App/assets/139683223/0e8d8630-43c9-4cdd-9d05-2f67d5eb98a8
+
+---
+
 ## Multilingual AI Chatbot
 
-Provides tourism assistance in multiple languages and answers questions about locations, services, and travel guidance.
+Provides intelligent tourism assistance in multiple languages, enabling users to ask questions about destinations, services, and travel guidance through a **context-aware Retrieval-Augmented Generation (RAG) system.**
+
+---
+
+### 🔹 Overview
+
+The chatbot is designed to overcome language barriers for international travelers by integrating **multilingual processing, hybrid retrieval mechanisms, and LLM-based response generation.** It ensures accurate, relevant, and context-aware answers by combining **semantic search, structured queries, and geospatial reasoning.**
+
+---
+
+### 🔹 System Architecture & Workflow
+
+<img src="readme_images/.png" width="700">
+
+---
+
+### 🔹 Key Highlights
+
+- Multilingual conversational AI for tourism support
+- Hybrid RAG architecture (semantic + structured + geospatial retrieval)
+- Intelligent query routing for optimized performance
+- Real-time navigation and route generation
+- Context-aware, grounded LLM responses
+- Persistent chat memory for improved user experience
 
 ---
 
 ## Intelligent Trip Planning
 
-Generates travel itineraries based on user preferences, location, and available attractions.
+Generates personalized, multi-day travel itineraries based on user preferences, leveraging a **hybrid AI architecture combining RAG, semantic search, and LLM orchestration.**
+
+---
+
+### 🔹 Overview
+
+This feature creates **optimized travel plans** by analyzing user inputs (dates, interests, locations, and travel preferences) and combining them with **semantic destination retrieval, geospatial routing, and intelligent scheduling.** The system ensures both contextual relevance and real-world feasibility.
+
+---
+
+### 🔹 System Architecture & Workflow
+
+<img src="readme_images/.png" width="700">
+---
+
+### 🔹 Key Highlights
+
+- Hybrid AI system (RAG + LLM + rule-based fallback)
+- Personalized, preference-aware itinerary generation
+- Geospatially optimized routing using OSRM
+- Scalable vector search with Pinecone
+- Robust validation and fault-tolerant design
 
 ---
 
 ## Location-Aware Recommendations
 
-Using **GPS and OSRM routing engine**, the system suggests Nearby attractions, Restaurants and services, Emergency contacts
+Provides real-time recommendations of **nearby tourist destinations and services using road-aware distance calculations and geospatial filtering.**
 
 ---
 
-# Tech Stack
+### 🔹 Overview
 
-- **Programming Languages** : Python | JavaScript | TypeScript
-- **Backend**  : FastAPI | Firebase
-- **Frontend** : Flutter | React.js
-- **AI**       : LLMs | RAG | Vector Embeddings | Pinecone Vector Database | LangChain
-- **APIs**     : Google Gemini API | OSRM Routing Engine | Google map API
-- **Infrastructure**  : Docker | AWS EC2
+This feature enhances travel planning by replacing simple straight-line distance calculations with real-world routing intelligence, ensuring users receive accurate and practical nearby suggestions.
 
+---
+
+### 🔹 Key Highlights
+
+- Real-world navigation accuracy (no Haversine approximation)
+- Dynamic radius-based search customization
+- Road-aware travel distance and time estimation
+- Practical and user-centric recommendations
+  
 ---
 
 # Demo
