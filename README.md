@@ -107,9 +107,8 @@ The system integrates **computer vision, geospatial intelligence, and large lang
 - Scalable vector search with Pinecone
 - Multilingual and voice-enabled user experience
 
-<img src="readme_images/snapgalle.png" width="700">
+<img src="readme_images/snapgalle.jpeg" width="700">
 
----
 
 ## Multilingual AI Chatbot
 
@@ -139,8 +138,8 @@ The chatbot is designed to overcome language barriers for international traveler
 - Persistent chat memory for improved user experience
 
 
-<img src="readme_images/chatnavigation.png" width="700">
----
+<img src="readme_images/chatnavigation.png" height="600">
+
 
 ## Intelligent Trip Planning
 
@@ -156,7 +155,8 @@ This feature creates **optimized travel plans** by analyzing user inputs (dates,
 
 ### 🔹 System Architecture & Workflow
 
-<img src="readme_images/tripDiagram.png" width="700">
+<img src="readme_images/tripDiagram.png" height="700">
+
 ---
 
 ### 🔹 Key Highlights
@@ -167,7 +167,8 @@ This feature creates **optimized travel plans** by analyzing user inputs (dates,
 - Scalable vector search with Pinecone
 - Robust validation and fault-tolerant design
 
-<img src="readme_images/tripImage.png" width="900">
+<img src="readme_images/tripImage.png" width="700">
+
 ---
 
 ## Location-Aware Recommendations
@@ -189,7 +190,8 @@ This feature enhances travel planning by replacing simple straight-line distance
 - Road-aware travel distance and time estimation
 - Practical and user-centric recommendations
 
-<img src="readme_images/nearby.png" width="700">
+<img src="readme_images/nearby.png" height="600">
+
 ---
 
 # Demo
