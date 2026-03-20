@@ -77,7 +77,7 @@ The system follows a **Full-Stack AI Architecture** integrating mobile apps, web
 
 # AI Features
 
-## Image-Based Tourism Content Generation
+## 1. Image-Based Tourism Content Generation
 
 This feature enables users to capture a image of a location and automatically generate rich, structured tourism friendly content including historical background, cultural insights etc by leveraging a **multimodal Retrieval-Augmented Generation (RAG) pipeline.**
 
@@ -107,8 +107,7 @@ The system integrates **computer vision, geospatial intelligence, and large lang
 - Scalable vector search with Pinecone
 - Multilingual and voice-enabled user experience
 
-<img src="readme_images/system_diagram.png" width="700">
-https://github.com/RashmiImasha/Music_Web_App/assets/139683223/0e8d8630-43c9-4cdd-9d05-2f67d5eb98a8
+<img src="readme_images/snapgalle.png" width="700">
 
 ---
 
@@ -124,9 +123,9 @@ The chatbot is designed to overcome language barriers for international traveler
 
 ---
 
-### 🔹 System Architecture & Workflow
+### 🔹 System Workflow
 
-<img src="readme_images/.png" width="700">
+<img src="readme_images/chat.png" width="700">
 
 ---
 
@@ -139,6 +138,8 @@ The chatbot is designed to overcome language barriers for international traveler
 - Context-aware, grounded LLM responses
 - Persistent chat memory for improved user experience
 
+
+<img src="readme_images/chatnavigation.png" width="700">
 ---
 
 ## Intelligent Trip Planning
@@ -155,7 +156,7 @@ This feature creates **optimized travel plans** by analyzing user inputs (dates,
 
 ### 🔹 System Architecture & Workflow
 
-<img src="readme_images/.png" width="700">
+<img src="readme_images/tripDiagram.png" width="700">
 ---
 
 ### 🔹 Key Highlights
@@ -166,6 +167,7 @@ This feature creates **optimized travel plans** by analyzing user inputs (dates,
 - Scalable vector search with Pinecone
 - Robust validation and fault-tolerant design
 
+<img src="readme_images/tripImage.png" width="900">
 ---
 
 ## Location-Aware Recommendations
@@ -186,13 +188,14 @@ This feature enhances travel planning by replacing simple straight-line distance
 - Dynamic radius-based search customization
 - Road-aware travel distance and time estimation
 - Practical and user-centric recommendations
-  
+
+<img src="readme_images/nearby.png" width="700">
 ---
 
 # Demo
 
 Watch the full system demonstration here:  
-[Click to view the demo](https://drive.google.com/file/d/15xS4y2Od0BG3fZvWXAiwhhqHOw5ssd_i/view?usp=sharing)
+[Click to view the demo](https://drive.google.com/file/d/1dw0WrWL8SdmHVUNNFSWjCkkc89zctQUc/view?usp=drive_link)
 
 ---
 
