@@ -107,10 +107,11 @@ The system integrates **computer vision, geospatial intelligence, and large lang
 - Scalable vector search with Pinecone
 - Multilingual and voice-enabled user experience
 
-<img src="readme_images/snapgalle.jpeg" width="700">
+<img src="readme_images/snapgalle.jpeg" width="400">
 
+---
 
-## Multilingual AI Chatbot
+## 2. Multilingual AI Chatbot
 
 Provides intelligent tourism assistance in multiple languages, enabling users to ask questions about destinations, services, and travel guidance through a **context-aware Retrieval-Augmented Generation (RAG) system.**
 
@@ -140,8 +141,9 @@ The chatbot is designed to overcome language barriers for international traveler
 
 <img src="readme_images/chatnavigation.png" height="600">
 
+---
 
-## Intelligent Trip Planning
+## 3. Intelligent Trip Planning
 
 Generates personalized, multi-day travel itineraries based on user preferences, leveraging a **hybrid AI architecture combining RAG, semantic search, and LLM orchestration.**
 
@@ -155,7 +157,7 @@ This feature creates **optimized travel plans** by analyzing user inputs (dates,
 
 ### 🔹 System Architecture & Workflow
 
-<img src="readme_images/tripDiagram.png" height="700">
+<img src="readme_images/tripDiagram.png" height="600">
 
 ---
 
@@ -167,7 +169,7 @@ This feature creates **optimized travel plans** by analyzing user inputs (dates,
 - Scalable vector search with Pinecone
 - Robust validation and fault-tolerant design
 
-<img src="readme_images/tripImage.png" width="700">
+<img src="readme_images/tripImage.png" width="800">
 
 ---
 
@@ -190,7 +192,7 @@ This feature enhances travel planning by replacing simple straight-line distance
 - Road-aware travel distance and time estimation
 - Practical and user-centric recommendations
 
-<img src="readme_images/nearby.png" height="600">
+<img src="readme_images/nearby.png" height="500">
 
 ---
 
