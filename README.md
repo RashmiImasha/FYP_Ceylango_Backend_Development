@@ -48,7 +48,7 @@ The platform provides an **AI-driven tourism assistance system** that helps tour
 
 ### Key Features
 
-- Image-based tourism content generation
+- Image-based content generation
 - Multilingual AI chatbot
 - Intelligent trip planning
 - Location-aware recommendations
